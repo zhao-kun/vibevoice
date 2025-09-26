@@ -68,8 +68,11 @@ class VibeVoiceTokenConstraintProcessor(LogitsProcessor):
     
 class VibeVoiceForConditionalInference(nn.Module):
 
-    def __init__(self, config, device_map="cuda", attn_implementation="sdpa", torch_dtype=torch.float16):
+    def __init__(self, config):
         # Initialize the base model
+        super().__init__()
+        self.config = config
+
         self.model = VibeVoiceModel(config)
         
         # LM head for text generation
@@ -78,9 +81,9 @@ class VibeVoiceForConditionalInference(nn.Module):
         # inference configuration
         self.ddpm_inference_steps = config.diffusion_head_config.ddpm_num_inference_steps
 
-        self.device_map = device_map
-        self.torch_dtype = torch_dtype
-        self.attn_implementation = attn_implementation
+        self.device_map = config.device_map
+        self.torch_dtype = config.torch_dtype
+        self.attn_implementation = config.attn_implementation
         self.tie_weights()
 
     @property

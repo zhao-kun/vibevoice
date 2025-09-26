@@ -988,7 +988,7 @@ class VibeVoiceTokenizerEncoderOutput:
         """Return the distribution mode (which is the mean for Gaussian)."""
         return self.mean
     
-class VibeVoiceAcousticTokenizerModel(PreTrainedModel):
+class VibeVoiceAcousticTokenizerModel(nn.Module):
     """VibeVoice speech tokenizer model combining encoder and decoder for acoustic tokens"""
     
     base_model_prefix = "vibevoice_acoustic_tokenizer"
@@ -997,7 +997,8 @@ class VibeVoiceAcousticTokenizerModel(PreTrainedModel):
     _no_split_modules = ["TokenizerEncoder", "TokenizerDecoder"]
 
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
+        self.config = config
         
         self.register_buffer('fix_std', torch.tensor(config.fix_std), persistent=False)
         self.std_dist_type = getattr(config, "std_dist_type", "fix")
@@ -1103,7 +1104,7 @@ class VibeVoiceAcousticTokenizerModel(PreTrainedModel):
         return reconstructed, sampled_latents
 
 
-class VibeVoiceSemanticTokenizerModel(PreTrainedModel):
+class VibeVoiceSemanticTokenizerModel(nn.Module):
     """VibeVoice speech tokenizer model with only encoder for semantic tokens"""
     
     base_model_prefix = "vibevoice_semantic_tokenizer"
@@ -1112,7 +1113,9 @@ class VibeVoiceSemanticTokenizerModel(PreTrainedModel):
     _no_split_modules = ["TokenizerEncoder"]
     
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
+
+        self.config = config
         
         # Parse encoder depths
         if isinstance(config.encoder_depths, str):

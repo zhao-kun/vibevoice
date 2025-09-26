@@ -71,7 +71,7 @@ class SpeechConnector(nn.Module):
 
 
 # @auto_docstring
-class VibeVoicePreTrainedModel(PreTrainedModel):
+class VibeVoicePreTrainedModel(nn.Module):
     config_class = VibeVoiceConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
@@ -107,7 +107,7 @@ class VibeVoicePreTrainedModel(PreTrainedModel):
 # @auto_docstring
 class VibeVoiceModel(VibeVoicePreTrainedModel):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         
         if hasattr(config, 'torch_dtype') and config.torch_dtype is not None:
             if isinstance(config.torch_dtype, str):

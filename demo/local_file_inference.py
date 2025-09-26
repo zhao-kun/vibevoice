@@ -6,9 +6,10 @@ from typing import List, Tuple, Union, Dict, Any
 import time
 import torch
 
-from vibevoice.model.modeling_vibevoice_inference import VibeVoiceForConditionalInference
+from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalInference
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
+from config.configuration_vibevoice import VibeVoiceConfig
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
@@ -256,21 +257,24 @@ def main():
     print(f"Loading processor & model from {args.model_path}")
     processor = VibeVoiceProcessor.from_pretrained(args.model_path)
 
-
     # Decide dtype & attention implementation
     load_dtype = torch.bfloat16
     attn_implementation = "sdpa"
 
     print(f"Using device: {args.device}, torch_dtype: {load_dtype}, attn_implementation: {attn_implementation}")
+    os.path.join(args.model_path, "config.json")
+    with open(os.path.join(args.model_path, "config.json"), 'r') as f:
+        import json
+        config_dict = json.load(f)
+
+    config = VibeVoiceConfig.from_dict(config_dict, 
+                                       torch_dtype=load_dtype, 
+                                       device_map="cuda", 
+                                       attn_implementation=attn_implementation)
+
+
     # Load model with device-specific logic
-    model = VibeVoiceForConditionalInference(
-        args.model_path,
-        torch_dtype=load_dtype,
-        device_map="cuda",
-        attn_implementation=attn_implementation,
-    )
-
-
+    model = VibeVoiceForConditionalInference(config)
 
     model.eval()
     model.set_ddpm_inference_steps(num_steps=10)

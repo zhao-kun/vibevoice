@@ -185,7 +185,7 @@ class FinalLayer(nn.Module):
         return x
 
 
-class VibeVoiceDiffusionHead(PreTrainedModel):
+class VibeVoiceDiffusionHead(nn.Module):
     """
     Diffusion head model for vibevoice.
     
@@ -201,7 +201,7 @@ class VibeVoiceDiffusionHead(PreTrainedModel):
         self,
         config,
     ):
-        super().__init__(config)
+        super().__init__()
         self.config = config
         self.cond_dim = config.hidden_size
         latent_size = config.latent_size

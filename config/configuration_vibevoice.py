@@ -216,8 +216,6 @@ class VibeVoiceDiffusionHeadConfig:
         self.ddpm_num_inference_steps = ddpm_num_inference_steps
         self.ddpm_beta_schedule = ddpm_beta_schedule
         self.ddpm_batch_mul = ddpm_batch_mul
-        
-        super().__init__(**kwargs)
 
 class VibeVoiceConfig:
     model_type = "vibevoice"
@@ -295,6 +293,38 @@ class VibeVoiceConfig:
         # other parameters
         self.acoustic_vae_dim = getattr(self.acoustic_tokenizer_config, 'vae_dim', 64)
         self.semantic_vae_dim = getattr(self.semantic_tokenizer_config, 'vae_dim', 128)
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict, **kwargs):
+        """
+        Create a VibeVoiceConfig instance from a dictionary.
+        """
+        # Extract sub-configs from the main config dict
+        acoustic_tokenizer_config = config_dict.get("acoustic_tokenizer_config", None)
+        semantic_tokenizer_config = config_dict.get("semantic_tokenizer_config", None)
+        decoder_config = config_dict.get("decoder_config", None)
+        diffusion_head_config = config_dict.get("diffusion_head_config", None)
+
+        # Remove sub-configs from the main dict to avoid duplication
+        main_config = {k: v for k, v in config_dict.items() if k not in [
+            "acoustic_tokenizer_config", 
+            "semantic_tokenizer_config", 
+            "decoder_config", 
+            "diffusion_head_config"
+        ]}
+
+        main_config.update(kwargs)
+
+        return cls(
+            acoustic_tokenizer_config=acoustic_tokenizer_config,
+            semantic_tokenizer_config=semantic_tokenizer_config,
+            decoder_config=decoder_config,
+            diffusion_head_config=diffusion_head_config,
+            **main_config
+        )
 
 
 __all__ = [
