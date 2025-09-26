@@ -1,7 +1,9 @@
 from pyexpat import model
 import torch
 from transformers import Qwen2Tokenizer
-from vibevoice.model.modular_vibevoice_qwen import Qwen2ForCausalLM, QwenConfig
+
+from vibevoice.modular.modular_vibevoice_qwen import Qwen2ForCausalLM
+from config.configuration_vibevoice import QwenConfig
 
 
 def inference(model_path: str, model_name: str="Qwen/Qwen2-0.5B", config: QwenConfig=None):

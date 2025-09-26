@@ -19,12 +19,12 @@ from vibevoice.modular.modular_vibevoice_tokenizer import VibeVoiceTokenizerStre
 from vibevoice.modular.modular_vibevoice_diffusion_head import VibeVoiceDiffusionHead
 from vibevoice.schedule.dpm_solver import DPMSolverMultistepScheduler
 
-from vibevoice.modular.configuration_vibevoice import VibeVoiceConfig
+from config.configuration_vibevoice import VibeVoiceConfig
 
 from vibevoice.modular.modular_vibevoice_text_tokenizer import VibeVoiceTextTokenizer, VibeVoiceTextTokenizerFast
 
 from vibevoice.modular.modeling_vibevoice import VibeVoicePreTrainedModel
-from vibevoice.model.modeling_vibevoice import VibeVoiceModel
+from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
 
 logger = logging.get_logger(__name__)

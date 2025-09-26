@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Callable, Optional, Tuple, Union, Any
 
 from transformers.utils import logging
-from .configuration_vibevoice import QwenConfig
+from config.configuration_vibevoice import QwenConfig
 
 logger = logging.get_logger(__name__)
 
@@ -416,7 +416,6 @@ class QwenModel(nn.Module):
             attentions=all_self_attns,
         )
 
-
 class Qwen2ForCausalLM(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -460,7 +459,7 @@ class Qwen2ForCausalLM(nn.Module):
         if not pathlib.Path(pretrained_model_name_or_path).resolve().exists():
             raise FileNotFoundError(f"Model path {pretrained_model_name_or_path} does not exist.")
         
-        from .safetensors_util import MemoryEfficientSafeOpen
+        from util.safetensors_util import MemoryEfficientSafeOpen
         with MemoryEfficientSafeOpen(pretrained_model_name_or_path) as f:
             state_dict = {}
             for key in f.keys():

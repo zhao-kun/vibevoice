@@ -17,11 +17,12 @@ from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.utils import logging
 
 
-from .modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceAcousticTokenizerModel, VibeVoiceSemanticTokenizerModel
-from .modular_vibevoice_diffusion_head import VibeVoiceDiffusionHead
+from vibevoice.modular.modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceAcousticTokenizerModel, VibeVoiceSemanticTokenizerModel
+from vibevoice.modular.modular_vibevoice_diffusion_head import VibeVoiceDiffusionHead
 from vibevoice.schedule.dpm_solver import DPMSolverMultistepScheduler
 
-from .configuration_vibevoice import VibeVoiceConfig
+from config.configuration_vibevoice import VibeVoiceConfig
+from .modular_vibevoice_qwen import QwenModel, QwenConfig
 
 
 logger = logging.get_logger(__name__)
@@ -118,11 +119,12 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         
         # Initialize Qwen2 model for language modeling
         lm_config = config.decoder_config 
-        self.language_model = AutoModel.from_config(lm_config)
+        lm_config = QwenConfig.from_config(lm_config)
+        self.language_model = QwenModel(lm_config).to(dtype)
         
         # Initialize speech components if needed
-        self.acoustic_tokenizer = AutoModel.from_config(config.acoustic_tokenizer_config).to(dtype)
-        self.semantic_tokenizer = AutoModel.from_config(config.semantic_tokenizer_config).to(dtype)
+        self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config).to(dtype)
+        self.semantic_tokenizer = VibeVoiceSemanticTokenizerModel(config.semantic_tokenizer_config).to(dtype)
 
         self.acoustic_connector = SpeechConnector(config.acoustic_vae_dim, lm_config.hidden_size).to(dtype)
         self.semantic_connector = SpeechConnector(config.semantic_vae_dim, lm_config.hidden_size).to(dtype)
@@ -132,7 +134,7 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         self.register_buffer('speech_bias_factor', torch.tensor(float('nan')))
 
         # Initialize prediction head for speech generation
-        self.prediction_head = AutoModel.from_config(config.diffusion_head_config).to(dtype)
+        self.prediction_head = VibeVoiceDiffusionHead(config.diffusion_head_config).to(dtype)
 
         # Initialize noise scheduler
         self.noise_scheduler = DPMSolverMultistepScheduler(
@@ -476,8 +478,6 @@ class VibeVoiceForConditionalGeneration(VibeVoicePreTrainedModel):
             attentions=outputs.attentions,
         )
 
-AutoModel.register(VibeVoiceConfig, VibeVoiceModel)
-AutoModelForCausalLM.register(VibeVoiceConfig, VibeVoiceForConditionalGeneration)
 
 __all__ = [
     "VibeVoiceModel",
