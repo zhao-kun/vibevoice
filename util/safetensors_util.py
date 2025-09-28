@@ -249,7 +249,7 @@ class MultipleSafetensorLoader:
         self.path = path.parent
         
     
-    def loader(self) -> Dict:
+    def load_dict(self) -> Dict:
         """Load all tensors from the multiple safetensors files as specified in the index.
 
         Returns:
@@ -275,5 +275,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Memory-efficient safetensors reader example")
     parser.add_argument("--filename", type=str, help="Path to the safetensors file", default="./models/vibevoice/model.safetensors.index.json")
     args = parser.parse_args()
-    models = MultipleSafetensorLoader(args.filename).loader()
+    models = MultipleSafetensorLoader(args.filename).load_dict()
     print(models.keys())

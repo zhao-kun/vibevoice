@@ -6,16 +6,18 @@ from abc import ABC, abstractmethod
 from typing import Callable, Optional, Tuple, Union, Any
 
 from transformers.utils import logging
+from transformers.cache_utils import Cache, SlidingWindowCache, StaticCache, DynamicCache
+from transformers.modeling_outputs import BaseModelOutputWithPast
 from config.configuration_vibevoice import QwenConfig
 
 logger = logging.get_logger(__name__)
 
 
-@dataclass
-class BaseModelOutputWithPast:
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+#@dataclass
+# class BaseModelOutputWithPast:
+#    def __init__(self, **kwargs):
+#         for key, value in kwargs.items():
+#             setattr(self, key, value)
 
 
 def default_rope_parameters(
@@ -263,9 +265,10 @@ class Qwen2Attention(nn.Module):
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         attention_mask: Optional[torch.Tensor],
+        past_key_value: Optional[Cache] = None,
+        cache_position: Optional[torch.LongTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = False,
-        cache_position: Optional[torch.LongTensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
@@ -276,6 +279,19 @@ class Qwen2Attention(nn.Module):
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+        if past_key_value is not None:
+            # sin and cos are specific to RoPE models; cache_position needed for the static cache
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+            key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+        
+
+        sliding_window = None
+        if (self.config.use_sliding_window and getattr(self.config, "sliding_window", None) is not None
+            and self.layer_idx >= self.config.max_window_layers):
+            sliding_window = self.config.sliding_window       
 
         attn_output, attn_weights = sdpa_attention_forward(
             self,
@@ -285,6 +301,7 @@ class Qwen2Attention(nn.Module):
             attention_mask,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
+            sliding_window = sliding_window,
         )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
@@ -309,6 +326,8 @@ class QwenDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
+        past_key_value: Optional[Cache] = None,
+        output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
@@ -322,6 +341,7 @@ class QwenDecoderLayer(nn.Module):
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
+            past_key_value=past_key_value,
             use_cache=use_cache,
             cache_position=cache_position,
             position_embeddings=position_embeddings,
@@ -366,7 +386,10 @@ class QwenModel(nn.Module):
         input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         use_cache: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
     ) -> BaseModelOutputWithPast:
@@ -376,10 +399,21 @@ class QwenModel(nn.Module):
         if (input_ids is None) ^ (inputs_embeds is not None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
+        if not isinstance(past_key_values, (type(None), Cache)):
+            raise ValueError("The `past_key_values` should be either a `Cache` object or `None`.")
+
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
+
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache()
         
-        cache_position = torch.arange(0, 0 + inputs_embeds.shape[1], device=inputs_embeds.device)
+
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(past_seen_tokens, 
+                                          past_seen_tokens + inputs_embeds.shape[1], 
+                                          device=inputs_embeds.device)
 
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
@@ -402,16 +436,20 @@ class QwenModel(nn.Module):
                 hidden_states,
                 attention_mask=causal_mask,
                 position_ids=position_ids,
+                past_key_value=past_key_values,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                cache_position=cache_position,
                 position_embeddings=position_embeddings,
             )
 
             hidden_states = layer_outputs[0]
 
-
         hidden_states = self.norm(hidden_states)
 
         return BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
+            past_key_values=past_key_values if use_cache else None,
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
@@ -430,7 +468,10 @@ class Qwen2ForCausalLM(nn.Module):
         input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
@@ -443,7 +484,11 @@ class Qwen2ForCausalLM(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
+            past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             cache_position=cache_position,
         )
 

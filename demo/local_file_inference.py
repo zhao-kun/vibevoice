@@ -274,7 +274,7 @@ def main():
 
 
     # Load model with device-specific logic
-    model = VibeVoiceForConditionalInference(config)
+    model = VibeVoiceForConditionalInference.from_pretrain(args.model_path, config)
 
     model.eval()
     model.set_ddpm_inference_steps(num_steps=10)

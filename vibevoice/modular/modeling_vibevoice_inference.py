@@ -67,6 +67,8 @@ class VibeVoiceTokenConstraintProcessor(LogitsProcessor):
         return scores
     
 class VibeVoiceForConditionalInference(nn.Module):
+    main_input_name: str = "input_ids"
+    config_class = VibeVoiceConfig
 
     def __init__(self, config):
         # Initialize the base model
@@ -84,7 +86,14 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.device_map = config.device_map
         self.torch_dtype = config.torch_dtype
         self.attn_implementation = config.attn_implementation
+        self.generation_config = self.generate_config_from_dict(config.__dict__)
         self.tie_weights()
+        self.device = torch.device("cuda")
+    
+    def generate_config_from_dict(self, config_dict: Dict) -> GenerationConfig:
+        generation_config = GenerationConfig.from_dict(config_dict, return_unused_kwargs=False, _from_model_config=True)
+        generation_config._original_object_hash = hash(generation_config)
+        return generation_config        
 
     @property
     def noise_scheduler(self):
@@ -270,7 +279,6 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         generation_config, model_kwargs = self._prepare_generation_config(
             generation_config, 
-            True, 
             speech_start_id=tokenizer.speech_start_id, 
             speech_end_id=tokenizer.speech_end_id, 
             speech_diffusion_id=tokenizer.speech_diffusion_id, 
@@ -292,33 +300,30 @@ class VibeVoiceForConditionalInference(nn.Module):
         input_ids_length = input_ids.shape[1]
         has_default_max_length = kwargs.get("max_length") is None and generation_config.max_length is not None
         has_default_min_length = kwargs.get("min_length") is None and generation_config.min_length is not None
-        generation_config = self._prepare_generated_length(
-            generation_config=generation_config,
-            has_default_max_length=has_default_max_length,
-            has_default_min_length=has_default_min_length,
-            model_input_name=model_input_name,
-            inputs_tensor=inputs_tensor,
-            input_ids_length=input_ids_length,
-        )
+        # Commented out for now, as we handle max length simplicity
+        # generation_config = self._prepare_generated_length(
+        #     generation_config=generation_config,
+        #     has_default_max_length=has_default_max_length,
+        #     has_default_min_length=has_default_min_length,
+        #     model_input_name=model_input_name,
+        #     inputs_tensor=inputs_tensor,
+        #     input_ids_length=input_ids_length,
+        # )
+
+        generation_config.max_length = input_ids_length + generation_config.max_new_tokens
 
         max_cache_length = generation_config.max_length - 1
-        self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)
-        model_kwargs['cache_position'] = torch.arange(input_ids_length, device=device, dtype=torch.long)
+
+        # TODO: Restore cache for sliding window attention if needed
+        # self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)
+        # model_kwargs['cache_position'] = torch.arange(input_ids_length, device=device, dtype=torch.long)
+
         for k, v in model_kwargs.items():
             if isinstance(v, torch.Tensor):
                 model_kwargs[k] = v.to(device=device)
         
         if return_processors:
-            logits_processor = self._get_logits_processor(
-                generation_config=generation_config,
-                input_ids_seq_length=input_ids_length,
-                encoder_input_ids=inputs_tensor,
-                prefix_allowed_tokens_fn=None,
-                logits_processor=LogitsProcessorList(),
-                device=inputs_tensor.device,
-                model_kwargs=model_kwargs,
-            )
-
+            logits_processor = LogitsProcessorList()
             stopping_criteria = self._get_stopping_criteria(generation_config=generation_config, stopping_criteria=StoppingCriteriaList())
         
             return generation_config, model_kwargs, input_ids, logits_processor, stopping_criteria
@@ -708,6 +713,161 @@ class VibeVoiceForConditionalInference(nn.Module):
             eps = torch.cat([half_eps, half_eps], dim=0)
             speech = self.model.noise_scheduler.step(eps, t, speech).prev_sample
         return speech[: len(speech) // 2]
+
+    def _prepare_generation_config(self, generation_config: Optional[GenerationConfig], **kwargs: Dict) -> Tuple[GenerationConfig, Dict]:
+        """
+        Prepares the base generation config, then applies any generation configuration options from kwargs. This
+        function handles retrocompatibility with respect to configuration files.
+        """
+        # parameterization priority:
+        # kwargs > non-global default values in `generation_config` > `model.generation_config` > GenerationConfig()
+        # TODO (joao): per-model generation config classes.
+
+        using_model_generation_config = False
+        # If `generation_config` is provided:
+        # - `use_model_defaults`: let's fallback ALL default values to the model's generation config
+        # - otherwise: legacy behavior, let's just make sure we have the tokens defined
+        modified_values = {}
+        default_generation_config = GenerationConfig()
+        for key, default_value in default_generation_config.__dict__.items():
+            if key.startswith("_") or key == "transformers_version":  # metadata
+                continue
+            custom_gen_config_value = getattr(generation_config, key)
+            model_gen_config_value = getattr(self.generation_config, key)
+            if custom_gen_config_value == default_value and model_gen_config_value != default_value:
+                modified_values[key] = model_gen_config_value
+                setattr(generation_config, key, model_gen_config_value)
+        if len(modified_values) > 0:
+            logger.warning_once(
+                f"`generation_config` default values have been modified to match model-specific defaults: "
+                f"{modified_values}. If this is not desired, please set these values explicitly."
+            )
+
+        # Finally, apply any passed kwargs
+        model_kwargs = generation_config.update(**kwargs)
+
+        return generation_config, model_kwargs    
+    
+    def _prepare_special_tokens(
+        self,
+        generation_config: GenerationConfig,
+        kwargs_has_attention_mask: Optional[bool] = None,
+        device: Optional[Union[torch.device, str]] = None,
+    ):
+        """
+        Prepares the special tokens for generation, overwriting the generation config with their processed versions
+        converted to tensor.
+
+        Note that `generation_config` is changed in place and stops being serializable after this method is called.
+        That is no problem if called within `generate` (`generation_config` is a local copy that doesn't leave the
+        function). However, if called outside `generate`, consider creating a copy of `generation_config` first.
+        """
+
+        # Convert special tokens to tensors
+        def _tensor_or_none(token, device=None):
+            if token is None:
+                return token
+
+            device = device if device is not None else self.device
+            if isinstance(token, torch.Tensor):
+                return token.to(device)
+            return torch.tensor(token, device=device, dtype=torch.long)
+
+        bos_token_tensor = _tensor_or_none(generation_config.bos_token_id, device=device)
+        eos_token_tensor = _tensor_or_none(generation_config.eos_token_id, device=device)
+        pad_token_tensor = _tensor_or_none(generation_config.pad_token_id, device=device)
+        decoder_start_token_tensor = _tensor_or_none(generation_config.decoder_start_token_id, device=device)
+
+        # We can have more than one eos token. Always treat it as a 1D tensor (when it exists).
+        if eos_token_tensor is not None and eos_token_tensor.ndim == 0:
+            eos_token_tensor = eos_token_tensor.unsqueeze(0)
+
+        # Sanity checks/warnings
+        if self.config.is_encoder_decoder and decoder_start_token_tensor is None:
+            raise ValueError(
+                "`decoder_start_token_id` or `bos_token_id` has to be defined for encoder-decoder generation."
+            )
+
+        if eos_token_tensor is not None and (
+            torch.is_floating_point(eos_token_tensor) or (eos_token_tensor < 0).any()
+        ):
+            logger.warning(
+                f"`eos_token_id` should consist of positive integers, but is {eos_token_tensor}. Your generation "
+                "will not stop until the maximum length is reached. Depending on other flags, it may even crash."
+            )
+
+        # Update generation config with the updated special tokens tensors
+        # NOTE: this must be written into a different attribute name than the one holding the original special tokens
+        # (in their non-tensor form), in order to enable end-to-end compilation. See
+        # https://pytorch.org/docs/stable/torch.compiler_cudagraph_trees.html#limitations
+        generation_config._bos_token_tensor = bos_token_tensor
+        generation_config._eos_token_tensor = eos_token_tensor
+        generation_config._pad_token_tensor = pad_token_tensor
+        generation_config._decoder_start_token_tensor = decoder_start_token_tensor
+
+
+    @classmethod
+    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig):
+        """Load model from pretrained weights."""
+        model = cls(config)
+        from util.safetensors_util import MultipleSafetensorLoader 
+        import os
+        state_dict = MultipleSafetensorLoader(os.path.join(model_path, "model.safetensors.index.json")).load_dict()
+        model.load_state_dict(state_dict, strict=False)
+        return model
+
+    def _prepare_model_inputs(
+        self,
+        inputs: Optional[torch.Tensor] = None,
+        bos_token_id: Optional[torch.Tensor] = None,
+        model_kwargs: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, Optional[str], Dict[str, torch.Tensor]]:
+        """
+        This function extracts the model-specific `inputs` for generation.
+        """
+        input_name = self.main_input_name
+        model_kwargs = {k: v for k, v in model_kwargs.items() if v is not None or k != input_name}
+
+        # 2. check whether model_input_name is passed as kwarg
+        # if yes and `inputs` is None use kwarg inputs
+        inputs_kwarg = model_kwargs.pop(input_name, None)
+        if inputs_kwarg is not None and inputs is not None:
+            raise ValueError(
+                f"`inputs`: {inputs}` were passed alongside {input_name} which is not allowed. "
+                f"Make sure to either pass {inputs} or {input_name}=..."
+            )
+        elif inputs_kwarg is not None:
+            inputs = inputs_kwarg
+
+        return inputs, input_name, model_kwargs
+
+    def _get_stopping_criteria(
+        self,
+        generation_config: GenerationConfig,
+        stopping_criteria: Optional[StoppingCriteriaList],
+        **kwargs,
+    ) -> StoppingCriteriaList:
+        from transformers.generation.stopping_criteria import MaxLengthCriteria, EosTokenCriteria, ConfidenceCriteria
+        criteria = StoppingCriteriaList()
+        if generation_config.max_length is not None:
+            max_position_embeddings = getattr(self.config, "max_position_embeddings", None)
+            criteria.append(
+                MaxLengthCriteria(
+                    max_length=generation_config.max_length,
+                    max_position_embeddings=max_position_embeddings,
+                )
+            )
+        if generation_config._eos_token_tensor is not None:
+            criteria.append(EosTokenCriteria(eos_token_id=generation_config._eos_token_tensor))
+        if (
+            generation_config.is_assistant
+            and generation_config.assistant_confidence_threshold is not None
+            and generation_config.assistant_confidence_threshold > 0
+        ):
+            criteria.append(
+                ConfidenceCriteria(assistant_confidence_threshold=generation_config.assistant_confidence_threshold)
+            )
+        return criteria
 
 __all__ = [
     "VibeVoiceForConditionalInference",

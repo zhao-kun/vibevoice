@@ -220,6 +220,7 @@ class VibeVoiceDiffusionHeadConfig:
 class VibeVoiceConfig:
     model_type = "vibevoice"
     is_composition = True
+    is_encoder_decoder = False
     sub_configs = {
         "acoustic_tokenizer_config": VibeVoiceAcousticTokenizerConfig, 
         "semantic_tokenizer_config": VibeVoiceSemanticTokenizerConfig,
