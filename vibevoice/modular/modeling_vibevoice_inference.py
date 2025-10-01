@@ -1,13 +1,15 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, Callable
+from typing import Dict, List, Optional, Tuple, Union, Callable, Any
 from tqdm import tqdm
 import torch
 import torch.nn as nn
+import inspect
 
 from transformers.models.auto import AutoModel, AutoModelForCausalLM
 
 from transformers.generation import GenerationMixin, GenerationConfig, LogitsProcessor, LogitsProcessorList, StoppingCriteriaList
 from transformers.modeling_outputs import BaseModelOutputWithPast, ModelOutput
+from transformers.cache_utils import Cache, DynamicCache
 from transformers import modeling_utils
 from transformers.modeling_utils import PreTrainedModel
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
@@ -78,7 +80,10 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.model = VibeVoiceModel(config)
         
         # LM head for text generation
-        self.lm_head = nn.Linear(config.decoder_config.hidden_size, config.decoder_config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.decoder_config.hidden_size, 
+                                 config.decoder_config.vocab_size, 
+                                 bias=False, 
+                                 dtype=config.torch_dtype)
         
         # inference configuration
         self.ddpm_inference_steps = config.diffusion_head_config.ddpm_num_inference_steps
@@ -87,8 +92,9 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.torch_dtype = config.torch_dtype
         self.attn_implementation = config.attn_implementation
         self.generation_config = self.generate_config_from_dict(config.__dict__)
-        self.tie_weights()
+        self.dtype = config.torch_dtype
         self.device = torch.device("cuda")
+        #self.tie_weights()
     
     def generate_config_from_dict(self, config_dict: Dict) -> GenerationConfig:
         generation_config = GenerationConfig.from_dict(config_dict, return_unused_kwargs=False, _from_model_config=True)
@@ -131,10 +137,6 @@ class VibeVoiceForConditionalInference(nn.Module):
         """
         Tie the weights between the input embeddings and the output embeddings.
         """
-        # Tie lm_head.weight to language_model.embed_tokens.weight
-        if not getattr(self.config, 'tie_word_embeddings', False):
-            return
-         
         if hasattr(self, 'lm_head') and hasattr(self.model.language_model, 'embed_tokens'):
             self.lm_head.weight = self.model.language_model.embed_tokens.weight
         
@@ -314,9 +316,8 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         max_cache_length = generation_config.max_length - 1
 
-        # TODO: Restore cache for sliding window attention if needed
-        # self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)
-        # model_kwargs['cache_position'] = torch.arange(input_ids_length, device=device, dtype=torch.long)
+        self._prepare_cache_for_generation(generation_config, model_kwargs, None, batch_size, max_cache_length, device)
+        model_kwargs['cache_position'] = torch.arange(input_ids_length, device=device, dtype=torch.long)
 
         for k, v in model_kwargs.items():
             if isinstance(v, torch.Tensor):
@@ -807,13 +808,19 @@ class VibeVoiceForConditionalInference(nn.Module):
 
 
     @classmethod
-    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig):
+    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda"):
         """Load model from pretrained weights."""
         model = cls(config)
         from util.safetensors_util import MultipleSafetensorLoader 
         import os
         state_dict = MultipleSafetensorLoader(os.path.join(model_path, "model.safetensors.index.json")).load_dict()
         model.load_state_dict(state_dict, strict=False)
+        # tie_weights can't be call in the class __init__ function because the
+        # lm_head share the same weight with the language_model.embed_tokens
+        # but the load_state_dict function could broken the share weight link.
+        # so we have to call it after load_state_dict to establish the share weight link.
+        #model.tie_weights()
+        model.to(device)
         return model
 
     def _prepare_model_inputs(
@@ -869,6 +876,157 @@ class VibeVoiceForConditionalInference(nn.Module):
             )
         return criteria
 
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: torch.LongTensor,
+        past_key_values: Optional[Cache] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
+    ):
+        """
+        Prepare the model inputs for generation. In includes operations like computing the 4D attention mask or
+        slicing inputs given the existing cache.
+
+        See the forward pass in the model documentation for expected arguments (different models might have different
+        requirements for e.g. `past_key_values`). This function should work as is for most LLMs.
+        """
+
+        # 1. Handle BC:
+        model_inputs = {}
+        model_inputs["cache_position"] = cache_position
+        if past_key_values is not None:
+            model_inputs["past_key_values"] = past_key_values
+            inputs_embeds, input_ids = self._cache_dependant_input_preparation(input_ids, inputs_embeds, cache_position)
+
+        input_ids_key = "input_ids"
+        model_inputs[input_ids_key] = input_ids.clone(memory_format=torch.contiguous_format)
+        model_inputs["inputs_embeds"] = None
+
+        attention_mask_key = "attention_mask"
+        position_ids_key = "position_ids"
+
+        if (attention_mask is not None and kwargs.get(position_ids_key) is None and \
+            position_ids_key in set(inspect.signature(self.forward).parameters.keys())):
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            kwargs[position_ids_key] = position_ids  
+
+        for model_input_name in ["position_ids", "token_type_ids", "decoder_position_ids"]:
+            model_input = kwargs.get(model_input_name)
+            if model_input is not None:
+                if past_key_values is not None:
+                    current_input_length = (
+                        model_inputs["inputs_embeds"].shape[1]
+                        if model_inputs.get("inputs_embeds") is not None
+                        else model_inputs[input_ids_key].shape[1]
+                    )
+                    model_input = model_input[:, -current_input_length:]
+                    model_input = model_input.clone(memory_format=torch.contiguous_format)
+                model_inputs[model_input_name] = model_input
+        
+        model_inputs[attention_mask_key] = attention_mask
+
+        for key, value in kwargs.items():
+            if key not in model_inputs:
+                model_inputs[key] = value
+
+        # 8. Remove unexpected `generate` inputs (TODO @joao: fix trainer and examples)
+        model_inputs.pop("labels", None)
+        return model_inputs
+
+    def _prepare_cache_for_generation(
+        self,
+        generation_config: GenerationConfig,
+        model_kwargs: Dict,
+        assistant_model: "PreTrainedModel",
+        batch_size: int,
+        max_cache_length: int,
+        device: torch.device,
+    ) -> bool:
+        """
+        Prepares the cache for generation (if applicable), given `generate`'s parameterization. If a cache is
+        instantiated, writes it to `model_kwargs`, under the name expected by the model.
+        """
+
+        cache_name = "past_key_values"
+
+        if generation_config.use_cache is False:
+            return
+
+        model_kwargs[cache_name] = DynamicCache()
+
+
+
+    def _update_model_kwargs_for_generation(
+        self,
+        outputs: ModelOutput,
+        model_kwargs: Dict[str, Any],
+        is_encoder_decoder: bool = False,
+        num_new_tokens: int = 1,
+    ) -> Dict[str, Any]:
+        # update past_key_values keeping its naming used in model code
+        for possible_cache_name in ['past_key_values', 'cache_params', 'state', 'mems', 'past_buckets_states']:
+            if possible_cache_name in outputs:
+                # TODO (joao): remove output/input mismatch when these old models (xlnet, reformer) are deprecated
+                if possible_cache_name in ("past_buckets_states", "mems"):
+                    cache_name = "past_key_values"
+                else:
+                    cache_name = possible_cache_name
+                model_kwargs[cache_name] = getattr(outputs, possible_cache_name)
+                break
+
+            # update attention mask
+        if "attention_mask" in model_kwargs:
+            attention_mask = model_kwargs["attention_mask"]
+            model_kwargs["attention_mask"] = torch.cat(
+                [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
+            )
+
+        if model_kwargs.get("use_cache", True):
+            model_kwargs["cache_position"] = model_kwargs["cache_position"][-1:] + num_new_tokens
+        else:
+            past_positions = model_kwargs.pop("cache_position")
+            new_positions = torch.arange(
+                past_positions[-1] + 1, past_positions[-1] + num_new_tokens + 1, dtype=past_positions.dtype
+            ).to(past_positions.device)
+            model_kwargs["cache_position"] = torch.cat((past_positions, new_positions))
+        return model_kwargs
+
+
+    def _cache_dependant_input_preparation(
+        self,
+        input_ids: torch.LongTensor,
+        inputs_embeds: Optional[torch.FloatTensor],
+        cache_position: Optional[torch.LongTensor],
+    ) -> Tuple[torch.FloatTensor, torch.LongTensor]:
+        """
+        Generic cache-dependent input preparation
+        The code is put in a separate function to allow granular unit testing
+        as it needs a different implementation to be exportable.
+
+        If we have cache: let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
+        - Exception 1: when passing input_embeds, input_ids may be missing entries
+        - Exception 2: some generation methods do special slicing of input_ids, so we don't need to do it here
+        - Exception 3: with synced GPUs cache_position may go out of bounds, but we only want dummy token in that case.
+        - Excpetion 4: If input_embeds are passed then slice it through `cache_position`, to keep only the unprocessed tokens and
+          generate the first token for each sequence. Later use the generated Input ids for continuation.
+
+        The current implementation does not rely on ``self`` and could be
+        a class method. It is left as a standard method to be easily rewritten.
+        """
+        if inputs_embeds is not None and input_ids.shape[1] == 0:  # Exception 4
+            inputs_embeds = inputs_embeds[:, -cache_position.shape[0] :]
+        elif (
+            inputs_embeds is not None  # Exception 1
+            or (cache_position[-1] >= input_ids.shape[1])  # Exception 3
+        ):
+            input_ids = input_ids[:, -cache_position.shape[0] :]
+        elif input_ids.shape[1] != cache_position.shape[0]:  # Default case (the "else", a no op, is Exception 2)
+            input_ids = input_ids[:, cache_position]
+        return inputs_embeds, input_ids
+ 
 __all__ = [
     "VibeVoiceForConditionalInference",
 ]

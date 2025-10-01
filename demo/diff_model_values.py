@@ -51,7 +51,7 @@ def compare_model_weights(model1, model2, tolerance=1e-6):
     return differences
 
 
-def load_local_model():
+def load_local_model(model_path=""):
     from vibevoice.modular.modular_vibevoice_qwen import Qwen2ForCausalLM, QwenConfig
     config = QwenConfig(
         attention_dropout=0.0,

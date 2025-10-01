@@ -82,6 +82,8 @@ class VibeVoicePreTrainedModel(nn.Module):
     _supports_quantized_cache = True
     _supports_static_cache = True
     _supports_attention_backend = True
+    dtype: torch.dtype = torch.bfloat16
+    device = "cuda"
 
     def _init_weights(self, module):
         if isinstance(module, VibeVoiceDiffusionHead):
@@ -106,7 +108,7 @@ class VibeVoicePreTrainedModel(nn.Module):
 
 # @auto_docstring
 class VibeVoiceModel(VibeVoicePreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config: VibeVoiceConfig):
         super().__init__()
         
         if hasattr(config, 'torch_dtype') and config.torch_dtype is not None:

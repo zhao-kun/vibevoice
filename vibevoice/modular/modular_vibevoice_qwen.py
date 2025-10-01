@@ -269,6 +269,7 @@ class Qwen2Attention(nn.Module):
         cache_position: Optional[torch.LongTensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
         use_cache: Optional[bool] = False,
+        **kwargs,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
@@ -331,6 +332,7 @@ class QwenDecoderLayer(nn.Module):
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
+        **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         residual = hidden_states
 
@@ -392,6 +394,7 @@ class QwenModel(nn.Module):
         output_hidden_states: Optional[bool] = None,
         use_cache: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
     ) -> BaseModelOutputWithPast:
 
         use_cache = use_cache if use_cache is not None else self.config.use_cache
@@ -441,6 +444,7 @@ class QwenModel(nn.Module):
                 use_cache=use_cache,
                 cache_position=cache_position,
                 position_embeddings=position_embeddings,
+                **kwargs,
             )
 
             hidden_states = layer_outputs[0]

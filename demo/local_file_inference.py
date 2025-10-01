@@ -195,6 +195,8 @@ def main():
 
     print(f"Using device: {args.device}")
 
+    torch.random.manual_seed(42)
+
     # Initialize voice mapper
     voice_mapper = VoiceMapper()
     

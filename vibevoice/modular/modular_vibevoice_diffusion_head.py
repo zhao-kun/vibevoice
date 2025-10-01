@@ -196,6 +196,8 @@ class VibeVoiceDiffusionHead(nn.Module):
     supports_gradient_checkpointing = True
     _supports_flash_attn_2 = True  
     _supports_sdpa = True  
+    dtype: torch.dtype = torch.bfloat16
+    device = "cuda" 
     
     def __init__(
         self,

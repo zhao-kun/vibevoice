@@ -995,6 +995,8 @@ class VibeVoiceAcousticTokenizerModel(nn.Module):
     _supports_flash_attn_2 = True  
     _supports_sdpa = True  
     _no_split_modules = ["TokenizerEncoder", "TokenizerDecoder"]
+    dtype: torch.dtype = torch.bfloat16
+    device = "cuda"
 
     def __init__(self, config):
         super().__init__()
@@ -1111,6 +1113,8 @@ class VibeVoiceSemanticTokenizerModel(nn.Module):
     _supports_flash_attn_2 = True  
     _supports_sdpa = True  
     _no_split_modules = ["TokenizerEncoder"]
+    dtype: torch.dtype = torch.bfloat16
+    device = "cuda"
     
     def __init__(self, config):
         super().__init__()
