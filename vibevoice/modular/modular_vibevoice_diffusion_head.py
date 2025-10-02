@@ -1,13 +1,8 @@
 import math
-from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from transformers.models.auto import AutoModel
-from transformers.modeling_utils import PreTrainedModel
-# from transformers.modeling_layers import GradientCheckpointingLayer
 from transformers.activations import ACT2FN
 from transformers.utils import logging
 
@@ -36,7 +31,7 @@ class RMSNorm(nn.Module):
 
     def extra_repr(self) -> str:
         return f'dim={self.dim}, eps={self.eps}, elementwise_affine={self.elementwise_affine}'
-    
+
 def modulate(x, shift, scale):
     """Apply modulation to input tensor."""
     return x * (1 + scale) + shift
@@ -45,7 +40,7 @@ def modulate(x, shift, scale):
 class TimestepEmbedder(nn.Module):
     """
     Embeds scalar timesteps into vector representations.
-    
+
     Args:
         hidden_size (`int`): Size of the output embedding
         frequency_embedding_size (`int`, optional): Size of the intermediate frequency embedding
@@ -64,13 +59,13 @@ class TimestepEmbedder(nn.Module):
     def timestep_embedding(t, dim, max_period=10000):
         """
         Create sinusoidal timestep embeddings.
-        
+
         Args:
             t (`torch.Tensor`): A 1-D Tensor of N indices, one per batch element.
                             These may be fractional.
             dim (`int`): The dimension of the output.
             max_period (`int`, optional): Controls the minimum frequency of the embeddings.
-            
+
         Returns:
             `torch.Tensor`: An [N, D] Tensor of positional embeddings.
         """
@@ -93,7 +88,7 @@ class TimestepEmbedder(nn.Module):
 class FeedForwardNetwork(nn.Module):
     """
     Standard feed-forward network with SwiGLU activation.
-    
+
     Args:
         embed_dim (`int`): Input dimension
         ffn_dim (`int`): Hidden dimension
@@ -113,17 +108,16 @@ class FeedForwardNetwork(nn.Module):
     def forward(self, x):
         gate = self.gate_proj(x)
         up = self.up_proj(x)
-        
+
         # SwiGLU activation
         # gate = F.silu(gate)
         gate = self.act_fn(gate)
         return self.down_proj(gate * up)
 
-    
 class HeadLayer(nn.Module):
     """
     A layer in the diffusion head.
-    
+
     Args:
         embed_dim (`int`): Input dimension
         ffn_dim (`int`): Hidden dimension
@@ -157,11 +151,10 @@ class HeadLayer(nn.Module):
         x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
         return x
 
-
 class FinalLayer(nn.Module):
     """
     Final layer in the diffusion head.
-    
+
     Args:
         hidden_size (`int`): Input dimension
         output_size (`int`): Output dimension
@@ -184,21 +177,20 @@ class FinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
-
 class VibeVoiceDiffusionHead(nn.Module):
     """
     Diffusion head model for vibevoice.
-    
+
     Args:
         config (`VibeVoiceDiffusionHeadConfig`): Model configuration
         latent_size (`int`, optional): Size of the latent space. If not provided, uses `config.latent_size`.
     """
     supports_gradient_checkpointing = True
-    _supports_flash_attn_2 = True  
-    _supports_sdpa = True  
+    _supports_flash_attn_2 = True
+    _supports_sdpa = True
     dtype: torch.dtype = torch.bfloat16
-    device = "cuda" 
-    
+    device = "cuda"
+
     def __init__(
         self,
         config,
@@ -207,13 +199,13 @@ class VibeVoiceDiffusionHead(nn.Module):
         self.config = config
         self.cond_dim = config.hidden_size
         latent_size = config.latent_size
-        
+
         self.noisy_images_proj = nn.Linear(latent_size, config.hidden_size, bias=False)
         self.cond_proj = nn.Linear(config.hidden_size, self.cond_dim, bias=False)
         self.t_embedder = TimestepEmbedder(self.cond_dim)
-        
+
         ffn_dim = int(config.hidden_size * config.head_ffn_ratio)
-        
+
         # Create the intermediate layers
         self.layers = nn.ModuleList([
             HeadLayer(
@@ -224,15 +216,15 @@ class VibeVoiceDiffusionHead(nn.Module):
             )
             for _ in range(config.head_layers)
         ])
-        
+
         # Final layer for output
         self.final_layer = FinalLayer(
-            hidden_size=config.hidden_size, 
+            hidden_size=config.hidden_size,
             output_size=latent_size,
             cond_size=self.cond_dim,
             norm_eps=config.rms_norm_eps
         )
-        
+
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -257,12 +249,12 @@ class VibeVoiceDiffusionHead(nn.Module):
     ):
         """
         Forward pass of the prediction head.
-        
+
         Args:
             noisy_images (`torch.Tensor`): Noisy images/latents to denoise
             timesteps (`torch.Tensor`): Timesteps for diffusion
             condition (`torch.Tensor`): Conditioning information
-            
+
         Returns:
             `torch.Tensor`: The predicted noise/velocity
         """
@@ -270,14 +262,12 @@ class VibeVoiceDiffusionHead(nn.Module):
         t = self.t_embedder(timesteps)
         condition = self.cond_proj(condition)
         c = condition + t
-        
+
         for layer in self.layers:
             x = layer(x, c)
-            
+
         x = self.final_layer(x, c)
         return x
-
-
 
 __all__ = [
     "VibeVoiceDiffusionHead",

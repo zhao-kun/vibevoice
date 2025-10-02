@@ -1,24 +1,13 @@
 import torch
-import torch.nn as nn   
-from typing import Optional
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
-from typing import Callable, Optional, Tuple, Union, Any
+import torch.nn as nn
+from typing import Optional, Tuple, Union
 
 from transformers.utils import logging
-from transformers.cache_utils import Cache, SlidingWindowCache, StaticCache, DynamicCache
+from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from config.configuration_vibevoice import QwenConfig
 
 logger = logging.get_logger(__name__)
-
-
-#@dataclass
-# class BaseModelOutputWithPast:
-#    def __init__(self, **kwargs):
-#         for key, value in kwargs.items():
-#             setattr(self, key, value)
-
 
 def default_rope_parameters(
     config: Optional[QwenConfig] = None,
@@ -285,12 +274,10 @@ class Qwen2Attention(nn.Module):
             # sin and cos are specific to RoPE models; cache_position needed for the static cache
             cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
-        
 
         sliding_window = None
-        if (self.config.use_sliding_window and getattr(self.config, "sliding_window", None) is not None
-            and self.layer_idx >= self.config.max_window_layers):
-            sliding_window = self.config.sliding_window       
+        if (self.config.use_sliding_window and getattr(self.config, "sliding_window", None) is not None and self.layer_idx >= self.config.max_window_layers):
+            sliding_window = self.config.sliding_window
 
         attn_output, attn_weights = sdpa_attention_forward(
             self,
@@ -300,7 +287,7 @@ class Qwen2Attention(nn.Module):
             attention_mask,
             dropout=0.0 if not self.training else self.attention_dropout,
             scaling=self.scaling,
-            sliding_window = sliding_window,
+            sliding_window=sliding_window,
         )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
@@ -408,12 +395,11 @@ class QwenModel(nn.Module):
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
-        
 
         if cache_position is None:
             past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
-            cache_position = torch.arange(past_seen_tokens, 
-                                          past_seen_tokens + inputs_embeds.shape[1], 
+            cache_position = torch.arange(past_seen_tokens,
+                                          past_seen_tokens + inputs_embeds.shape[1],
                                           device=inputs_embeds.device)
 
         if position_ids is None:
@@ -499,22 +485,20 @@ class Qwen2ForCausalLM(nn.Module):
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
         return logits
-    
+
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, config: QwenConfig):
         import pathlib
         if not pathlib.Path(pretrained_model_name_or_path).resolve().exists():
             raise FileNotFoundError(f"Model path {pretrained_model_name_or_path} does not exist.")
-        
+
         from util.safetensors_util import MemoryEfficientSafeOpen
         with MemoryEfficientSafeOpen(pretrained_model_name_or_path) as f:
             state_dict = {}
             for key in f.keys():
                 tensor = f.get_tensor(key)
-                state_dict[key] = tensor 
-        
+                state_dict[key] = tensor
+
         model = cls(config)
         model.load_state_dict(state_dict, strict=False)
         return model
-    
-    
