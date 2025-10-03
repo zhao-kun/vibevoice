@@ -270,6 +270,15 @@ def main():
         import json
         config_dict = json.load(f)
 
+    # Prepare inputs for the model
+    inputs = processor(
+        text=[full_script], # Wrap in list for batch processing
+        voice_samples=[voice_samples], # Wrap in list for batch processing
+        padding=True,
+        return_tensors="pt",
+        return_attention_mask=True,
+    )
+
     config = VibeVoiceConfig.from_dict(config_dict, 
                                        torch_dtype=load_dtype, 
                                        device_map="cuda", 
@@ -281,16 +290,6 @@ def main():
 
     model.eval()
     model.set_ddpm_inference_steps(num_steps=10)
-
-    # Prepare inputs for the model
-    inputs = processor(
-        text=[full_script], # Wrap in list for batch processing
-        voice_samples=[voice_samples], # Wrap in list for batch processing
-        padding=True,
-        return_tensors="pt",
-        return_attention_mask=True,
-    )
-
     # Move tensors to target device
     target_device = args.device if args.device != "cpu" else "cpu"
     for k, v in inputs.items():
