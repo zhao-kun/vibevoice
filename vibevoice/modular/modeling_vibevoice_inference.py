@@ -582,8 +582,8 @@ class VibeVoiceForConditionalInference(nn.Module):
                     )
                     negative_input_ids = torch.cat([negative_input_ids, next_tokens[:, None]], dim=-1)
                 # correct the non-diffusion indices
-                # we forward all samples' negative outputs even if 
-                #   they are not in diffusion mode to keep the cache consistent
+                # we forward all samples' negative outputs even if
+                # they are not in diffusion mode to keep the cache consistent
                 # So we need to correct the kv cache of non-diffusion samples
                 non_diffusion_mask = ~finished_tags & (next_tokens != generation_config.speech_diffusion_id)
                 if non_diffusion_mask.any():

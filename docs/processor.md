@@ -119,35 +119,46 @@ flowchart TD
 The `input_ids` field contains a carefully structured sequence of tokens representing the complete input to the model:
 
 ```mermaid
-flowchart LR
+%%{init: { 'themeVariables': { 'fontSize': '20px' } } }%%
+flowchart LR 
     A[System Prompt] --> B[Voice Input Section]
     B --> C[Text Input Section]
     C --> D[Speech Output Section]
-    
+
+    subgraph SO [Speech Output Section]
+        direction TB
+        SO1["Speech output: <br/>"]
+        SO2["&lt;speech_start&gt;"]
+        SO1 ~~~ SO2
+    end   
+
+    subgraph TI [Text Input Section]
+        direction TB
+        TI1["Text input: <br/>"]
+        TI2["Speaker 0: Hello everyone..."]
+        TI3["Speaker 1: Great to be here..."]
+        TI1 ~~~ TI2 ~~~ TI3
+    end
+
+
+    subgraph VI [Voice Input Section]
+        direction TB
+        VI1["Voice input: <br/>"]
+        VI2["Speaker 0: &lt;speech_start&gt;"]
+        VI3["&lt;speech_diffusion&gt; × N tokens"]
+        VI4["&lt;speech_end&gt;<br/>"]
+        VI5["Speaker 1: &lt;speech_start&gt;"]
+        VI6["&lt;speech_diffusion&gt; × M tokens"]
+        VI7["&lt;speech_end&gt; <br/>"]
+        VI1 ~~~ VI2 ~~~ VI3 ~~~ VI4 ~~~ VI5 ~~~ VI6 ~~~ VI7
+    end
+
     subgraph SP [System Prompt]
+        direction TB
         SP1["Transform the text provided by various speakers..."]
     end
 
-    subgraph VI [Voice Input Section]
-        VI1["Voice input: \\n"]
-        VI2["Speaker 0: <speech_start>"]
-        VI3["<speech_diffusion> × N tokens"]
-        VI4["<speech_end> \\n"]
-        VI5["Speaker 1: <speech_start>"]
-        VI6["<speech_diffusion> × M tokens"]
-        VI7["<speech_end> \\n"]
-    end
 
-    subgraph TI [Text Input Section]
-        TI1["Text input: \\n"]
-        TI2["Speaker 0: Hello everyone..."]
-        TI3["Speaker 1: Great to be here..."]
-    end
-
-    subgraph SO [Speech Output Section]
-        SO1["Speech output: \\n"]
-        SO2["<speech_start>"]
-    end 
 ```
 
 ### Detailed Breakdown:
