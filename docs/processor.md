@@ -77,6 +77,7 @@ The method returns a `BatchEncoding` object containing:
 ## Processing Flow
 
 ```mermaid
+%%{init: { 'themeVariables': { 'fontSize': '20px' } } }%%
 flowchart TD
     A[Input: text + voice_samples] --> B{Batch or Single?}
     B -->|Single| C[Wrap in list]
@@ -127,14 +128,14 @@ flowchart LR
 
     subgraph SO [Speech Output Section]
         direction TB
-        SO1["Speech output: <br/>"]
-        SO2["&lt;speech_start&gt;"]
+        SO1["Speech output: \\n"]
+        SO2["&lt; speech_start &gt;"]
         SO1 ~~~ SO2
     end   
 
     subgraph TI [Text Input Section]
         direction TB
-        TI1["Text input: <br/>"]
+        TI1["Text input: \\n"]
         TI2["Speaker 0: Hello everyone..."]
         TI3["Speaker 1: Great to be here..."]
         TI1 ~~~ TI2 ~~~ TI3
@@ -143,13 +144,13 @@ flowchart LR
 
     subgraph VI [Voice Input Section]
         direction TB
-        VI1["Voice input: <br/>"]
-        VI2["Speaker 0: &lt;speech_start&gt;"]
-        VI3["&lt;speech_diffusion&gt; × N tokens"]
-        VI4["&lt;speech_end&gt;<br/>"]
-        VI5["Speaker 1: &lt;speech_start&gt;"]
-        VI6["&lt;speech_diffusion&gt; × M tokens"]
-        VI7["&lt;speech_end&gt; <br/>"]
+        VI1["Voice input: \\n"]
+        VI2["Speaker 0: &lt; speech_start &gt;"]
+        VI3["&lt; speech_diffusion &gt; × N tokens"]
+        VI4["&lt; speech_end &gt;\\n"]
+        VI5["Speaker 1: &lt; speech_start &gt;"]
+        VI6["&lt; speech_diffusion &gt; × M tokens"]
+        VI7["&lt; speech_end &gt; \\n"]
         VI1 ~~~ VI2 ~~~ VI3 ~~~ VI4 ~~~ VI5 ~~~ VI6 ~~~ VI7
     end
 
