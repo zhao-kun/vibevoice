@@ -116,7 +116,7 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         # Initialize Qwen2 model for language modeling
         lm_config = config.decoder_config
         lm_config = QwenConfig.from_config(lm_config)
-        self.language_model = QwenModel(lm_config).to(dtype)
+        self.language_model = QwenModel(lm_config)
 
         # Initialize speech components if needed
         self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config).to(dtype)

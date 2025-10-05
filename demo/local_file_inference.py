@@ -14,6 +14,53 @@ from config.configuration_vibevoice import VibeVoiceConfig
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
+def is_debug_mode():
+    import sys
+    has_trace = hasattr(sys, 'gettrace') and sys.gettrace() is not None
+    has_breakpoint_hook = sys.breakpointhook.__module__ != "sys"
+    return has_trace or has_breakpoint_hook
+
+def setup_trace_torch_randn():
+    if not is_debug_mode():
+        return
+
+    import traceback
+    _orig_randn = torch.randn
+    _orig_randn_like = torch.randn_like
+    _orig_rand = torch.rand
+    _orig_randint = torch.randint
+    _orig_randint_like = torch.randint_like
+
+    def debug_rand(*args, **kwargs):
+        print("torch.rand called with:", args, kwargs)
+        traceback.print_stack(limit=5)
+        return _orig_rand(*args, **kwargs)
+
+    def debug_randn(*args, **kwargs):
+        print("torch.randn called with:", args, kwargs)
+        traceback.print_stack(limit=5)
+        return _orig_randn(*args, **kwargs)
+
+    def debug_randint(*args, **kwargs):
+        print("torch.randint called with:", args, kwargs)
+        traceback.print_stack(limit=5)
+        return _orig_randint(*args, **kwargs)
+
+    def debug_rand_like(*args, **kwargs):
+        print("torch.rand_like called with:", args, kwargs)
+        traceback.print_stack(limit=5)
+        return _orig_randn_like(*args, **kwargs)
+
+    def debug_randint_like(*args, **kwargs):
+        print("torch.randint_like called with:", args, kwargs)
+        traceback.print_stack(limit=5)
+        return _orig_randint_like(*args, **kwargs)
+
+    torch.randn = debug_randn
+    torch.randint = debug_randint
+    torch.randn_like = debug_rand_like
+    torch.randint_like = debug_randint_like
+    torch.rand = debug_rand
 
 class VoiceMapper:
     """Maps speaker names to voice file paths"""
@@ -181,6 +228,9 @@ def parse_args():
     return parser.parse_args()
 
 def main():
+
+    # setup_trace_torch_randn()
+
     args = parse_args()
 
     # Normalize potential 'mpx' typo to 'mps'
@@ -196,7 +246,7 @@ def main():
     print(f"Using device: {args.device}")
 
     torch.manual_seed(42)
-    torch.cuda.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
 
     # Initialize voice mapper
     voice_mapper = VoiceMapper()
