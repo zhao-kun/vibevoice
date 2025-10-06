@@ -115,7 +115,7 @@ graph LR
 ### 2. Language Model (QwenModel)
 **Location**: `vibevoice/modular/modular_vibevoice_qwen.py:414`
 
-**Purpose**: Transformer backbone for autoregressive token generation
+**Purpose**: Dual-role transformer backbone serving TWO critical functions
 
 **Architecture**:
 - 28 decoder layers (for 1.5B model)
@@ -124,9 +124,105 @@ graph LR
 - KV heads: 2 (GQA)
 - RoPE position encoding
 
+**Critical Dual Role**:
+
+#### Role 1: Token Prediction (Obvious)
+- Projects hidden states through LM head → next token logits
+- Predicts which token comes next (text, `<speech_start>`, `<speech_diffusion>`, etc.)
+
+#### Role 2: Speech Conditioning (Critical!)
+- **Hidden states** serve as **rich contextual embeddings** for diffusion sampling
+- Line 620: `positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]`
+- These hidden states encode:
+  - **Text semantics**: What content should be spoken
+  - **Dialogue context**: Speaker identity, conversation flow
+  - **Prosody hints**: Emotional tone, emphasis patterns
+  - **Long-range dependencies**: Context from earlier in the conversation
+
+**Why a Large LM Instead of MLP?**
+
+An MLP cannot provide the sophisticated conditioning needed because:
+
+1. **Context Understanding**: LM processes entire conversation history through self-attention
+   - Example: "She said 'hello' enthusiastically" → LM encodes both the text AND the emotional cue
+   - MLP would only see isolated embeddings, missing long-range context
+
+2. **Semantic Richness**: 1.5B parameter LM creates nuanced representations
+   - Understands linguistic structure, emotion, speaker characteristics
+   - These nuances directly control speech quality via diffusion conditioning
+
+3. **Multi-speaker Coherence**: Attention mechanism tracks speaker changes
+   - Maintains consistent voice characteristics per speaker across turns
+   - Handles complex multi-turn dialogues with speaker switching
+
+4. **Unified Representation**: Same hidden states serve both tasks
+   - Predicts WHEN to generate speech (next token prediction)
+   - Controls HOW to generate speech (diffusion conditioning)
+   - No need for separate context encoder
+
+**Code Evidence**:
+```python
+# Line 620: LM hidden state conditions the diffusion process
+positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]
+
+# Line 623-627: This condition controls speech generation
+speech_latent = self.sample_speech_tokens(
+    positive_condition,  # Rich contextual embedding from LM!
+    negative_condition,
+    cfg_scale=cfg_scale,
+)
+```
+
+**Visual Representation**:
+
+```mermaid
+graph TB
+    A[Input Embeddings<br/>Text + Speech] --> B[Qwen Language Model<br/>28 Transformer Layers]
+
+    B --> C[Hidden States<br/>1536-dim rich representations]
+
+    C --> D[LM Head<br/>Linear Projection]
+    D --> E[Next Token Logits<br/>Role 1: WHEN to speak]
+
+    C --> F[Diffusion Conditioning<br/>Direct use of hidden state]
+    F --> G[Speech Latent Generation<br/>Role 2: HOW to speak]
+
+    style B fill:#4caf50
+    style C fill:#ff9800
+    style E fill:#2196f3
+    style G fill:#f44336
+```
+
+**Concrete Example**:
+
+Consider generating speech for: *"Alice said 'I'm so excited!' with enthusiasm"*
+
+**Step-by-step**:
+1. Language Model processes full context with self-attention
+2. At position of `<speech_diffusion>` token:
+   - **Hidden state** encodes: text="I'm so excited", speaker=Alice, emotion=enthusiasm, prosody=exclamatory
+   - **LM head** predicts: next_token = `<speech_diffusion>` (Role 1: WHEN)
+   - **Diffusion head** receives hidden state as condition (Role 2: HOW)
+   - Diffusion generates speech latent matching: excited tone + Alice's voice + emphatic prosody
+
+**Without large LM** (using MLP):
+- MLP would only see current token embedding, no conversation context
+- Cannot understand "enthusiasm" refers to speech emotion
+- Cannot track that "Alice" is the speaker
+- Cannot apply prosody from "exclamatory" punctuation
+- Result: Flat, context-free speech generation ❌
+
+**With large LM** (current design):
+- Attention captures long-range context across full conversation
+- Hidden states encode rich semantic + emotional + speaker information
+- Diffusion receives comprehensive conditioning signal
+- Result: Natural, expressive, context-aware speech ✅
+
 **Input/Output**:
 - **Input**: Embeddings (batch_size, seq_len, hidden_size)
-- **Output**: Hidden states (batch_size, seq_len, hidden_size)
+- **Output**:
+  - Hidden states (batch_size, seq_len, hidden_size) → **Diffusion conditioning**
+  - Logits via LM head → Token prediction
 
 ### 3. Acoustic Tokenizer (VAE)
 **Location**: `vibevoice/modular/modular_vibevoice_tokenizer.py:987`
@@ -151,9 +247,9 @@ graph LR
 ```
 
 **Input/Output**:
-- **Encode**: Audio (batch, 1, time) → Latents (batch, time/320, 64)
-- **Decode**: Latents (batch, time/320, 64) → Audio (batch, 1, time)
-- **Compression Ratio**: 320x (hop_length = 8×5×4×2)
+- **Encode**: Audio (batch, 1, time) → Latents (batch, time/3200, 64)
+- **Decode**: Latents (batch, time/3200, 64) → Audio (batch, 1, time)
+- **Compression Ratio**: 3200x (hop_length = 8×5×5×4×2×2 = 3200)
 
 ### 4. Semantic Tokenizer (Encoder Only)
 **Location**: `vibevoice/modular/modular_vibevoice_tokenizer.py:1104`
@@ -222,6 +318,123 @@ graph TB
 **Input/Output**:
 - **Input**: Noisy latent (batch, 64) + Condition (batch, 1536) + Timestep
 - **Output**: Predicted noise/velocity (batch, 64)
+
+---
+
+### Why Not UNet? Transformer-Based vs UNet Diffusion Architecture
+
+#### Traditional UNet-Based Diffusion (e.g., Stable Diffusion, DDPM)
+
+**Architecture**:
+- **Encoder-Decoder structure** with skip connections
+- **Convolutional layers** for spatial processing
+- **Downsampling → Bottleneck → Upsampling** path
+- **Spatial inductive bias**: Assumes 2D/3D structure (images, spectrograms)
+
+**Typical Use Cases**:
+- Image generation (Stable Diffusion)
+- Spectrogram-based audio synthesis
+- Data with strong spatial correlations
+
+#### VibeVoice's Transformer-Based Diffusion Head
+
+**Architecture**:
+- **Feedforward layers** with adaptive layer normalization (AdaLN)
+- **No convolutional structure** - pure MLP-based
+- **Flat latent representation** (64-dim vectors, not spatial)
+- **Condition modulation**: Timestep + context condition via AdaLN
+- **Lightweight**: Only 4 layers with SwiGLU FFN
+
+**Key Design Choices**:
+
+1. **Flat Latent Space (64-dim vectors)**:
+   - Speech latents are **compressed temporal features**, not spatial spectrograms
+   - Each `<speech_diffusion>` token represents ~133ms of audio (3200 samples at 24kHz)
+   - No 2D structure to exploit → UNet's spatial convolutions unnecessary
+
+2. **AdaLN Modulation** (`modular_vibevoice_diffusion_head.py:143-152`):
+   ```python
+   # Condition (LM hidden state + timestep) modulates each layer
+   shift_ffn, scale_ffn, gate_ffn = self.adaLN_modulation(c).chunk(3, dim=-1)
+   x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
+   ```
+   - **Shift & scale**: Adjust feature statistics per sample
+   - **Gate**: Control contribution of each layer
+   - **Flexible conditioning**: Rich context from 1.5B LM hidden states
+
+3. **Efficiency for Speech**:
+   - Speech latents are **low-dimensional** (64 dims) vs images (e.g., 512×512×3)
+   - Simple FFN sufficient for this scale
+   - UNet adds complexity without benefit for 1D temporal data
+
+#### Pros and Cons Comparison
+
+| Aspect | **VibeVoice (Transformer FFN)** | **Traditional UNet** |
+|--------|----------------------------------|----------------------|
+| **Architecture Complexity** | ✅ Simple: 4 FFN layers with AdaLN | ❌ Complex: Encoder-decoder with skip connections |
+| **Parameter Efficiency** | ✅ Lightweight: ~10M params (4 layers × 1536 hidden × 3.0 FFN ratio) | ❌ Heavy: 50-100M+ params typical |
+| **Spatial Processing** | ❌ No spatial inductive bias | ✅ Strong for 2D/3D data (images, spectrograms) |
+| **Temporal Speech Data** | ✅ Direct processing of flat 64-dim latents | ⚠️ Requires reshaping or treating as "image" |
+| **Conditioning Flexibility** | ✅ AdaLN allows rich per-sample modulation from LM | ⚠️ Usually cross-attention or concatenation |
+| **Training Stability** | ✅ Zero-init final layers (`modular_vibevoice_diffusion_head.py:241-242`) | ⚠️ Requires careful initialization |
+| **Inference Speed** | ✅ Fast: 4 layers × 25 steps = 100 forward passes | ❌ Slow: Deep encoder-decoder × steps |
+| **Memory Usage** | ✅ Low: Small model + flat latents | ❌ High: Large model + spatial feature maps |
+| **Generalization** | ⚠️ Needs good conditioning from LM | ✅ Strong inductive bias for spatial data |
+
+#### Why This Design Works for VibeVoice
+
+**1. Speech is Temporal, Not Spatial**:
+- Unlike images (2D) or spectrograms (time-frequency 2D), speech latents are **compressed temporal features**
+- No spatial locality to exploit → UNet's convolutions add unnecessary computation
+- Direct FFN processing is sufficient
+
+**2. Rich Conditioning from Language Model**:
+- The 1.5B parameter Qwen LM provides **rich contextual embeddings** (1536-dim)
+- Hidden states encode: text semantics, speaker identity, emotion, prosody, long-range context
+- AdaLN modulation leverages this conditioning at every layer
+- **This is the real "intelligence"** - diffusion head just refines the latent guided by LM
+
+**3. Lightweight Design Enables Real-Time**:
+- Only 4 layers × 25 diffusion steps = 100 forward passes per speech token
+- Much faster than UNet's deep encoder-decoder
+- Critical for streaming TTS applications
+
+**4. Proven in Related Work**:
+- Similar designs in DiT (Diffusion Transformer) for images
+- MaskGIT and related models use transformer-based diffusion
+- Trend: "Attention is all you need" extending to diffusion models
+
+#### Code Evidence
+
+**Zero-Init for Stability** (`modular_vibevoice_diffusion_head.py:230-242`):
+```python
+def initialize_weights(self):
+    # Zero-out adaLN modulation layers → stable training
+    for layer in self.layers:
+        nn.init.constant_(layer.adaLN_modulation[-1].weight, 0)
+
+    # Zero-out output layers → identity at initialization
+    nn.init.constant_(self.final_layer.adaLN_modulation[-1].weight, 0)
+    nn.init.constant_(self.final_layer.linear.weight, 0)
+```
+
+**Modulation Mechanism** (`modular_vibevoice_diffusion_head.py:149-151`):
+```python
+# Each layer modulated by condition (LM hidden state + timestep)
+shift_ffn, scale_ffn, gate_ffn = self.adaLN_modulation(c).chunk(3, dim=-1)
+x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
+```
+
+#### Conclusion
+
+VibeVoice uses a **transformer-based diffusion head instead of UNet** because:
+
+1. **Speech latents are flat temporal vectors** (64-dim), not spatial data → No need for convolutions
+2. **Rich conditioning from LM** (1536-dim hidden states) → AdaLN modulation is efficient
+3. **Lightweight and fast** (4 layers) → Enables real-time streaming
+4. **Simpler architecture** → Fewer parameters, easier to train and deploy
+
+**Trade-off**: Relies heavily on **quality of LM conditioning**. If the language model's hidden states don't capture sufficient context, the diffusion head cannot compensate (unlike UNet's strong inductive bias). This is acceptable because VibeVoice uses a large 1.5B LM specifically for this purpose.
 
 ### 7. LM Head
 **Location**: `modeling_vibevoice_inference.py:71`
@@ -541,9 +754,80 @@ This design allows the model to:
 
 **Special Tokens**:
 - `<speech_start>`: Marks beginning of speech segment
-- `<speech_diffusion>`: Each represents ~10ms of audio (320 samples at 24kHz)
+- `<speech_diffusion>`: Each represents ~133ms of audio (3200 samples at 24kHz)
 - `<speech_end>`: Marks end of speech segment
 - `<|endoftext|>`: EOS token for entire generation
+
+#### Why ~133ms per Token? Understanding Temporal Compression
+
+Each `<speech_diffusion>` token represents a **compressed chunk of audio**. Here's how the compression works:
+
+**Step-by-Step Calculation**:
+
+1. **Audio Sampling Rate**: 24,000 Hz (24 kHz)
+   - 24,000 samples per second of audio
+
+2. **Acoustic Tokenizer Compression** (from config: `qwen2.5_1.5b_64k.json:23-29`):
+   - Encoder uses **6 downsampling layers** with ratios: `[8, 5, 5, 4, 2, 2]`
+   - Total compression ratio: 8 × 5 × 5 × 4 × 2 × 2 = **3200x**
+   - This is the `hop_length` of the encoder (`modular_vibevoice_tokenizer.py:677`)
+
+3. **Samples per Token**:
+   - Each latent frame represents 3200 audio samples
+   - At 24kHz: 3200 samples ÷ 24,000 Hz = **0.1333 seconds = 133.33 ms**
+
+**Visual Representation**:
+
+```
+Audio Waveform (24kHz):
+[3200 samples] → Encoder → [1 latent vector (64-dim)] → Decoder → [3200 samples]
+|←  133.33ms →|                                                    |← 133.33ms →|
+
+Multiple tokens for longer speech:
+Token 1: samples 0-3199     (0-133ms)    → latent_1
+Token 2: samples 3200-6399  (133-267ms)  → latent_2
+Token 3: samples 6400-9599  (267-400ms)  → latent_3
+...
+```
+
+**Code Evidence**:
+
+```python
+# vibevoice/modular/modular_vibevoice_tokenizer.py:674-677
+self.ratios = list(reversed(config.ratios))  # [8,5,5,4,2,2]
+self.hop_length = np.prod(self.ratios)       # 3200
+```
+
+```python
+# vibevoice/processor/vibevoice_processor.py:35
+def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
+    # Compression ratio used for calculating sequence lengths
+```
+
+**Implications**:
+
+1. **Efficient Representation**: 3200x compression drastically reduces sequence length
+   - 1 second of audio (24,000 samples) → ~7.5 latent tokens
+   - 10 seconds of audio → ~75 tokens
+
+2. **Temporal Resolution**: Each token captures 133ms of audio context
+   - Good balance between compression and temporal detail
+   - Sufficient for capturing phonemes and prosody patterns
+
+3. **Generation Speed**: Fewer tokens = faster generation
+   - Autoregressive generation processes fewer steps
+   - Each diffusion token still requires 25 diffusion steps, but total tokens reduced
+
+**Comparison to Other Models**:
+- **Codec models** (e.g., EnCodec): Often use 50-75 Hz frame rates (~13-20ms per token)
+- **VibeVoice**: 7.5 Hz effective rate (~133ms per token) - much higher compression
+- **Trade-off**: Higher compression → fewer tokens but requires more powerful diffusion to reconstruct quality
+
+**Example - 1 Second of Speech**:
+- Audio: 24,000 samples at 24kHz = 1 second
+- Compressed: 24,000 ÷ 3200 = 7.5 tokens
+- Pattern: `<speech_start> <speech_diffusion> × 7-8 <speech_end>`
+- Each `<speech_diffusion>` token triggers diffusion sampling (25 steps)
 
 **Generation Pattern**:
 ```
@@ -716,7 +1000,36 @@ The `VibeVoiceForConditionalInference` model implements a sophisticated pipeline
 3. **Generation**: Autoregressive token prediction with diffusion-based audio generation
 4. **Output**: High-quality, multi-speaker speech
 
-**Key Innovation**: Dual tokenizer approach (acoustic VAE + semantic encoder) combined with diffusion modeling enables high-quality voice cloning while maintaining efficient streaming generation.
+### Key Architectural Insights
+
+#### 1. **Language Model Has Dual Role** (Critical!)
+The large language model (1.5B Qwen) is NOT just for token prediction:
+- **Role 1**: Predict WHEN to generate speech (next token)
+- **Role 2**: Provide rich contextual conditioning for HOW to generate speech
+- Hidden states encode: semantics, emotion, speaker identity, prosody, long-range context
+- This is why a simple MLP cannot replace it - context understanding is essential
+
+#### 2. **Unified Embedding Pipeline**
+All tokens (text + speech) use the same embedding lookup initially:
+- Default embeddings for text, control, and special tokens
+- Only `<speech_diffusion>` tokens override embeddings with acoustic+semantic features
+- Enables unified architecture while preserving speech quality
+
+#### 3. **Dual Tokenizer System**
+- **Acoustic tokenizer** (VAE): Bidirectional audio ↔ latent conversion
+- **Semantic tokenizer** (Encoder): Extract meaning from generated audio
+- Combined features create richer speech representations than single tokenizer
+
+#### 4. **Diffusion for Quality**
+- Language model predicts discrete tokens (sequence structure)
+- Diffusion model generates continuous latents (audio quality)
+- Classifier-Free Guidance ensures conditioning fidelity
+- Separation of concerns: structure vs quality
+
+#### 5. **Streaming Architecture**
+- Convolutional caches enable chunk-by-chunk processing
+- Real-time audio generation as tokens are produced
+- Critical for interactive applications (voice assistants, real-time dubbing)
 
 **Model Files**:
 - Main inference: `vibevoice/modular/modeling_vibevoice_inference.py`
