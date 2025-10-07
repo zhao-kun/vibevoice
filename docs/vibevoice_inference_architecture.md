@@ -807,30 +807,390 @@ sequenceDiagram
 **Location**: `modeling_vibevoice_inference.py:150-178`
 
 ```mermaid
-flowchart TD 
-    A[Voice Sample Audio] --> B[Acoustic Tokenizer<br/>Encode]
-    B --> C[Sample from VAE<br/>Distribution]
-    C --> D[Apply Scaling + Bias]
-    D --> E[Acoustic Connector]
-    E --> F[Speech Embeddings]
+flowchart TD
+    A[Voice Sample Audio<br/>Raw waveform] --> B[Acoustic Tokenizer<br/>VAE Encoder]
+    B --> C[Latent Distribution<br/>mean + std]
+    C --> D[Sample Latents<br/>Reparameterization]
+    D --> E[Apply Scaling + Bias<br/>Normalization]
+    E --> F[Acoustic Connector<br/>MLP Projection]
+    F --> G[Speech Embeddings<br/>1536-dim]
 
     style B fill:#9c27b0,color:#FFFFFF
-    style E fill:#4caf50
+    style E fill:#ff9800
+    style F fill:#4caf50,color:#FFFFFF
 ```
 
-**Process**:
-1. **Encode**: Audio → Acoustic latents via VAE encoder
-2. **Sample**: Add noise based on distribution type (fix/gaussian)
-3. **Normalize**: Apply scaling factor and bias for stability
-4. **Connect**: Project to language model embedding space
+**Purpose**: Convert raw audio voice samples into embeddings that the language model can process for voice cloning.
+
+---
+
+### Detailed Process Breakdown
+
+#### 2.1 Why Process Speech Inputs This Way?
+
+**Design Philosophy**: VibeVoice needs to understand **"what voice sounds like"** from audio samples to clone it in generation.
+
+**Key Challenge**:
+- Raw audio: 24,000 samples/second = **too high-dimensional** for LM
+- Need: Compact representation capturing voice characteristics (timbre, pitch, speaking style)
+
+**Solution**: Use a **learned acoustic VAE** to compress audio into meaningful latent vectors
+
+#### 2.2 Step-by-Step Process
+
+**Step 1: Encode Audio to Latents** (`modeling_vibevoice_inference.py:155`)
+
+```python
+encoder_output = self.model.acoustic_tokenizer.encode(speech_tensors.unsqueeze(1))
+# Input:  speech_tensors (batch, time_samples) - raw waveform
+# Output: encoder_output with mean (batch, time/3200, 64) - compressed latents
+```
+
+**What happens**:
+- **Downsampling**: Audio passes through 6 convolutional layers with ratios [8,5,5,4,2,2]
+- **Compression**: 3200x reduction (24,000 samples/sec → 7.5 frames/sec)
+- **Feature extraction**: Each frame captures 133ms of audio characteristics
+- **Output**: Mean vector (64-dim) representing audio features
+
+**Architecture** (`modular_vibevoice_tokenizer.py:660-754`):
+```
+Audio (1 channel)
+  → SConv1d (stem)
+  → Downsample layer 1 (stride 8)  → 32 filters
+  → Downsample layer 2 (stride 5)  → 64 filters
+  → Downsample layer 3 (stride 5)  → 128 filters
+  → Downsample layer 4 (stride 4)  → 256 filters
+  → Downsample layer 5 (stride 2)  → 512 filters
+  → Downsample layer 6 (stride 2)  → 1024 filters
+  → Head (Conv1d)                  → 64 dims (latent)
+```
+
+**Step 2: Sample from Distribution** (`modeling_vibevoice_inference.py:156`)
+
+```python
+acoustic_latents = encoder_output.sample(dist_type=self.acoustic_tokenizer.std_dist_type)[0]
+# Applies reparameterization trick: latent = mean + std * ε (ε ~ N(0,1))
+```
+
+**Distribution Types**:
+- **`fix`**: Use fixed std (0.5 from config) - deterministic with slight noise
+- **`gaussian`**: Sample from learned distribution - more stochastic
+
+**Why sample?**:
+- Adds **slight variability** to avoid overfitting to exact voice samples
+- VAE regularization: ensures latent space is smooth and continuous
+- During inference: Usually `fix` for consistency
+
+**Step 3: Apply Scaling and Bias** (`modeling_vibevoice_inference.py:159`)
+
+```python
+acoustic_features = (acoustic_latents + self.speech_bias_factor) * self.speech_scaling_factor
+```
+
+**Purpose**: **Normalize latent statistics** for stable training
+
+**How computed** (`modeling_vibevoice.py:299-316`):
+```python
+# Computed from training data statistics
+speech_scaling_factor = 1.0 / std(latents)  # Scale to unit variance
+speech_bias_factor = -mean(latents)         # Center to zero mean
+```
+
+**Effect**:
+- Before: Latents have arbitrary mean/std (e.g., mean=5.2, std=2.3)
+- After: Latents are normalized (mean≈0, std≈1)
+- **Why**: Stable gradient flow, consistent embeddings across speakers
+
+**Step 4: Connect to LM Space** (`modeling_vibevoice_inference.py:162`)
+
+```python
+acoustic_connected = self.model.acoustic_connector(acoustic_features)[speech_masks.cpu()]
+# Input:  acoustic_features (batch, time, 64)
+# Output: acoustic_connected (valid_frames, 1536) - LM embeddings
+```
+
+**Acoustic Connector** (`modeling_vibevoice.py:53-75`):
+```python
+# Two-layer MLP with RMSNorm
+Linear(64 → 1536)
+RMSNorm(1536)
+Linear(1536 → 1536)
+```
+
+**What it does**:
+- Projects 64-dim acoustic latents to 1536-dim LM embedding space
+- Allows LM to "understand" voice features alongside text
+- Filtered by `speech_masks`: Only keep valid audio frames (ignore padding)
+
+**Step 5: Insert into Input Sequence** (`modeling_vibevoice_inference.py:224-225`)
+
+```python
+if speech_input_mask is not None:
+    inputs_embeds[speech_input_mask] = speech_embeds
+```
+
+**Effect**: Replace placeholder text tokens with actual voice embeddings
+
+**Example sequence**:
+```
+Before: [<text> <text> <VOICE_PLACEHOLDER> <text> ...]
+After:  [<text> <text> <voice_emb_0> <voice_emb_1> ... <voice_emb_N> <text> ...]
+```
+
+---
+
+### Why This Approach? Design Rationale
+
+#### 1. **VAE Over Raw Audio**
+
+**Problem with raw audio**:
+- 24,000 samples/sec × 3 seconds = 72,000 dimensions
+- LM cannot process such high-dimensional input efficiently
+- Most samples are redundant (adjacent samples highly correlated)
+
+**VAE solution**:
+- Compresses to 7.5 frames/sec × 3 seconds = ~23 latent vectors
+- Each 64-dim vector captures **perceptually relevant features**
+- 3200x compression while preserving voice identity
+
+#### 2. **Acoustic Connector (MLP) Over Direct Use**
+
+**Why not use latents directly?**
+- Acoustic latents live in "audio feature space" (spectral patterns, formants)
+- LM embeddings live in "semantic space" (words, concepts)
+- **Mismatch**: LM cannot directly interpret raw acoustic features
+
+**MLP projection**:
+- Learns transformation from audio features → semantic features
+- Enables LM to treat voice as "another modality" like text
+- Similar to vision-language models (CLIP: image features → text space)
+
+#### 3. **Scaling/Bias Normalization**
+
+**Why normalize?**:
+- Different speakers → different latent statistics
+- Male voice: lower formants → different latent means
+- Female voice: higher formants → different latent means
+
+**Normalization effect**:
+- Removes **speaker-specific bias**, keeps **voice characteristics**
+- Stabilizes training across diverse speakers
+- Ensures embeddings have consistent magnitude for LM
+
+---
+
+### VibeVoice VAE vs Stable Diffusion VAE
+
+| Aspect | **VibeVoice Acoustic VAE** | **Stable Diffusion VAE** |
+|--------|---------------------------|--------------------------|
+| **Input Domain** | 1D Audio (waveform) | 2D Images (RGB pixels) |
+| **Architecture** | 1D Convolutions (temporal) | 2D Convolutions (spatial) |
+| **Compression Ratio** | **3200x** (24kHz → 7.5Hz) | **8x** per dimension (512×512 → 64×64) = 64x total |
+| **Latent Dims** | **64-dim** per frame | **4 channels** (SD 1.5/2.1) or **16 channels** (SD3) |
+| **Encoder Layers** | 6 downsampling layers | 4 downsampling layers (8→16→32→64 strides) |
+| **Decoder Layers** | 6 upsampling layers | 4 upsampling layers |
+| **Downsampling Ratios** | [8, 5, 5, 4, 2, 2] | [2, 2, 2, 2] |
+| **Normalization** | **RMSNorm** + Layer scaling | GroupNorm |
+| **Architecture Type** | **ConvNeXt-style** (depthwise conv + FFN) | **U-Net-style** (skip connections) |
+| **Causal** | **Yes** (for streaming) | No (bidirectional) |
+| **KL Regularization** | Minimal (fix_std=0.5) | Standard KL divergence |
+| **Purpose** | Voice feature extraction | Image compression for diffusion |
+
+#### Key Differences Explained
+
+**1. 1D vs 2D Convolutions**
+
+**VibeVoice**:
+```python
+# 1D temporal convolution
+SConv1d(in_channels, out_channels, kernel_size=7, stride=8)
+# Processes: (batch, channels, time) → downsample time dimension
+```
+
+**Stable Diffusion**:
+```python
+# 2D spatial convolution
+Conv2d(in_channels, out_channels, kernel_size=3, stride=2)
+# Processes: (batch, channels, height, width) → downsample both spatial dims
+```
+
+**Why**:
+- Audio is inherently **1D temporal signal** (time series)
+- Images are **2D spatial data** (height × width)
+- Different inductive biases for different modalities
+
+**2. Much Higher Compression (3200x vs 64x)**
+
+**VibeVoice**:
+- 1 second audio = 24,000 samples → 7.5 latent frames
+- **Goal**: Extreme compression to make audio manageable for LM
+- **Trade-off**: Accepts some detail loss, relies on diffusion to reconstruct
+
+**Stable Diffusion**:
+- 512×512 image = 262,144 pixels → 64×64×4 = 16,384 latents
+- **Goal**: Preserve visual details (text, faces) while compressing
+- **Trade-off**: Less compression, more detail preserved
+
+**Why VibeVoice needs higher compression**:
+- Audio has much higher temporal redundancy than images have spatial redundancy
+- Adjacent audio samples are highly correlated (sampling theorem)
+- Speech changes slowly: phonemes last 50-100ms
+- Can compress 133ms chunks into single vector without major information loss
+
+**3. ConvNeXt-style vs U-Net-style**
+
+**VibeVoice** (ConvNeXt-inspired):
+```python
+# modular_vibevoice_tokenizer.py:660-754
+Downsampling layers (no skip connections)
+  → Stage 1: 3 ConvNeXt blocks (depthwise conv + FFN)
+  → Stage 2: 3 ConvNeXt blocks
+  → ...
+  → Stage 6: 8 ConvNeXt blocks
+```
+- **No skip connections** between encoder and decoder
+- **More aggressive compression**
+- Relies on diffusion to fill in details
+
+**Stable Diffusion** (U-Net):
+```python
+Encoder with skip connections
+  → Decoder uses skip connections from encoder
+```
+- **Skip connections** preserve fine details
+- Better reconstruction of high-frequency information
+- Important for images (text, edges, faces)
+
+**Why VibeVoice doesn't need U-Net**:
+- Audio reconstruction handled by **diffusion model**, not VAE decoder
+- VAE only used for **encoding voice samples** during inference
+- Decoder used only for **generated speech**, where diffusion already refined latents
+
+**4. Causal Design for Streaming**
+
+**VibeVoice**:
+```python
+# modular_vibevoice_tokenizer.py:678
+self.causal = True  # Encoder/decoder are causal
+```
+- **Causal convolutions**: Only look at past frames, not future
+- Enables **streaming inference**: process audio chunk-by-chunk
+- Critical for real-time TTS applications
+
+**Stable Diffusion**:
+- Non-causal: Can look at entire image bidirectionally
+- Images don't have temporal ordering requirement
+- No streaming constraint
+
+**5. Minimal KL Regularization**
+
+**VibeVoice**:
+```python
+# qwen2.5_1.5b_64k.json:31
+"fix_std": 0.5
+"std_dist_type": "gaussian"  # or "fix"
+```
+- **Fixed standard deviation** (0.5)
+- Minimal KL divergence term
+- More like **deterministic autoencoder** with slight noise
+
+**Why**:
+- Voice identity needs to be **precisely preserved**
+- Too much KL regularization → blur different speakers
+- Slight noise (0.5 std) prevents overfitting to exact samples
+
+**Stable Diffusion**:
+- Full KL-divergence loss during VAE training
+- Encourages smooth latent space
+- Balances reconstruction vs regularization
+
+**6. Depthwise Convolution (ConvNeXt-style)**
+
+**VibeVoice**:
+```python
+# modular_vibevoice_tokenizer.py:692
+mixer_layer = "depthwise_conv"  # Efficient conv operation
+```
+- **Depthwise separable convolutions**: Process each channel independently
+- **More parameter efficient** than standard conv
+- Scales better to deeper networks
+
+**Stable Diffusion**:
+- Standard 2D convolutions
+- More parameters, but spatial processing needs full connectivity
+
+---
+
+### Code Flow Summary
+
+**Full pipeline** (voice sample → LM embedding):
+
+```python
+# 1. Raw audio input
+voice_sample = load_audio("speaker_voice.wav")  # (batch, 24000*3) = (1, 72000)
+
+# 2. VAE encoding
+encoder_output = acoustic_tokenizer.encode(voice_sample.unsqueeze(1))
+# → (1, 1, 72000) → (1, 22, 64)  # 72000/3200 ≈ 22 frames
+
+# 3. Sample from distribution
+acoustic_latents = encoder_output.sample(dist_type="fix")  # mean + 0.5 * noise
+# → (1, 22, 64)
+
+# 4. Normalize statistics
+acoustic_features = (acoustic_latents + bias_factor) * scaling_factor
+# → (1, 22, 64) normalized to mean≈0, std≈1
+
+# 5. Project to LM space
+acoustic_connected = acoustic_connector(acoustic_features)
+# → (1, 22, 1536)
+
+# 6. Insert into input sequence
+inputs_embeds[voice_position] = acoustic_connected[0]  # Use all 22 frames
+# Final sequence: [text_emb, text_emb, voice_emb_0, ..., voice_emb_21, text_emb, ...]
+```
+
+**Result**: Voice sample is now represented as 22 vectors in LM embedding space, ready for the language model to process!
+
+---
+
+### Why This Matters for Voice Cloning
+
+**The key insight**: This processing enables the LM to "understand" voice characteristics:
+
+1. **Voice samples** (Step 2) → Acoustic features → LM embeddings
+2. **LM processes** these embeddings to learn: "This speaker sounds like [features]"
+3. **During generation**: LM hidden states encode "generate speech like [features]"
+4. **Diffusion head** receives LM hidden state → Knows what voice to synthesize
+
+Without proper speech input processing:
+- ❌ LM cannot distinguish between speakers
+- ❌ Generated speech sounds generic
+- ❌ Voice cloning fails
+
+With VibeVoice's approach:
+- ✅ LM learns speaker embeddings from voice samples
+- ✅ Hidden states encode voice characteristics
+- ✅ Diffusion generates speech matching target voice
 
 **Code Reference**:
 ```python
-# vibevoice/modular/modeling_vibevoice_inference.py:154-164
-encoder_output = self.acoustic_tokenizer.encode(speech_tensors.unsqueeze(1))
-acoustic_latents = encoder_output.sample(dist_type=self.acoustic_tokenizer.std_dist_type)[0]
-acoustic_features = (acoustic_latents + self.speech_bias_factor) * self.speech_scaling_factor
-acoustic_connected = self.acoustic_connector(acoustic_features)[speech_masks.cpu()]
+# vibevoice/modular/modeling_vibevoice_inference.py:150-178
+def _process_speech_inputs(self, speech_tensors, speech_masks, speech_type="audio"):
+    """Process speech inputs through tokenizers and connectors."""
+    with torch.no_grad():
+        if speech_type == "audio":
+            # Encode audio to acoustic latents
+            encoder_output = self.model.acoustic_tokenizer.encode(speech_tensors.unsqueeze(1))
+            acoustic_latents = encoder_output.sample(dist_type=self.model.acoustic_tokenizer.std_dist_type)[0]
+
+            # Apply scaling and bias
+            acoustic_features = (acoustic_latents + self.model.speech_bias_factor.to(acoustic_latents.device)) * self.model.speech_scaling_factor.to(acoustic_latents.device)
+
+            # Connect to language model space
+            acoustic_connected = self.model.acoustic_connector(acoustic_features)[speech_masks.cpu()]
+
+            return acoustic_features, acoustic_connected
 ```
 
 #### Step 3: Prefill Phase
