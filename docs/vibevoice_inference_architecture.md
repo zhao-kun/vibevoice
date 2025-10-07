@@ -738,8 +738,12 @@ flowchart TD
     A --> B[Prefill Phase]
     B --> C{Generation Loop}
 
-    C --> D[Forward Pass<br/>Language Model]
-    D --> E[Get Next Token Logits]
+    C --> D1["Speech Input Process"]
+    subgraph "LLM Forward"
+       D1 --> D2[Forward Pass<br/>Language Model]
+    end
+
+    D2 --> E[Get Next Token Logits]
     E --> F[Sample/Argmax Token]
 
     F --> G[Get Token Embedding<br/>for ALL tokens]
@@ -749,10 +753,12 @@ flowchart TD
     I --> C
 
     H -->|speech_diffusion| J[Run Diffusion Sampling]
-    J --> K[Generate Speech Latent]
-    K --> L[Decode to Audio Chunk]
-    L --> M[Encode to Semantic Features]
-    M --> N[Combine Acoustic + Semantic<br/>Update embedding]
+    subgraph "Speech Diffusion (Core speech generation)"
+        J --> K[Generate Speech Latent]
+        K --> L[Decode to Audio Chunk]
+        L --> M[Encode to Semantic Features]
+        M --> N[Combine Acoustic + Semantic<br/>Update embedding]
+    end
     N --> C
 
     H -->|speech_end| O[Clear Tokenizer Caches]
@@ -770,7 +776,7 @@ flowchart TD
 
     style I fill:#f44336,color:#FFFFFF
     style K fill:#9c27b0,color:#FFFFFF
-    style D fill:#4caf50
+    style D2 fill:#4caf50
     style N padding:0px
 ```
 
