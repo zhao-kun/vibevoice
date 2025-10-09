@@ -15,6 +15,7 @@ This document provides a comprehensive guide to understanding the `VibeVoiceForC
 ## Overview
 
 `VibeVoiceForConditionalInference` is the main inference class for VibeVoice, a text-to-speech model that combines:
+
 - **Autoregressive generation** for speech token prediction
 - **Diffusion-based synthesis** for high-quality audio generation
 - **Voice cloning** through acoustic and semantic embeddings
@@ -22,6 +23,7 @@ This document provides a comprehensive guide to understanding the `VibeVoiceForC
 **Location**: `vibevoice/modular/modeling_vibevoice_inference.py:59`
 
 **Key Features**:
+
 - Multi-speaker voice synthesis
 - Streaming audio generation support
 - Classifier-Free Guidance (CFG) for quality control
@@ -98,26 +100,31 @@ graph LR
 ## Key Components
 
 ### 1. VibeVoiceModel
+
 **Location**: `vibevoice/modular/modeling_vibevoice.py:104`
 
 **Purpose**: Core model combining language modeling with speech processing
 
 **Sub-components**:
+
 - **Language Model (QwenModel)**: Transformer-based backbone for sequence modeling
 - **Speech Tokenizers**: Convert between audio and latent representations
 - **Connectors**: Bridge speech features to language model space
 - **Diffusion Head**: Generate high-quality speech latents
 
 **Input/Output**:
+
 - **Input**: Text embeddings + speech embeddings
 - **Output**: Hidden states for text and speech generation
 
 ### 2. Language Model (QwenModel)
+
 **Location**: `vibevoice/modular/modular_vibevoice_qwen.py:414`
 
 **Purpose**: Dual-role transformer backbone serving TWO critical functions
 
 **Architecture**:
+
 - 28 decoder layers (for 1.5B model)
 - Hidden size: 1536
 - Attention heads: 12
@@ -127,10 +134,12 @@ graph LR
 **Critical Dual Role**:
 
 #### Role 1: Token Prediction (Obvious)
+
 - Projects hidden states through LM head → next token logits
 - Predicts which token comes next (text, `<speech_start>`, `<speech_diffusion>`, etc.)
 
 #### Role 2: Speech Conditioning (Critical!)
+
 - **Hidden states** serve as **rich contextual embeddings** for diffusion sampling
 - Line 620: `positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]`
 - These hidden states encode:
@@ -161,6 +170,7 @@ An MLP cannot provide the sophisticated conditioning needed because:
    - No need for separate context encoder
 
 **Code Evidence**:
+
 ```python
 # Line 620: LM hidden state conditions the diffusion process
 positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]
@@ -198,6 +208,7 @@ graph TB
 Consider generating speech for: *"Alice said 'I'm so excited!' with enthusiasm"*
 
 **Step-by-step**:
+
 1. Language Model processes full context with self-attention
 2. At position of `<speech_diffusion>` token:
    - **Hidden state** encodes: text="I'm so excited", speaker=Alice, emotion=enthusiasm, prosody=exclamatory
@@ -206,6 +217,7 @@ Consider generating speech for: *"Alice said 'I'm so excited!' with enthusiasm"*
    - Diffusion generates speech latent matching: excited tone + Alice's voice + emphatic prosody
 
 **Without large LM** (using MLP):
+
 - MLP would only see current token embedding, no conversation context
 - Cannot understand "enthusiasm" refers to speech emotion
 - Cannot track that "Alice" is the speaker
@@ -213,23 +225,27 @@ Consider generating speech for: *"Alice said 'I'm so excited!' with enthusiasm"*
 - Result: Flat, context-free speech generation ❌
 
 **With large LM** (current design):
+
 - Attention captures long-range context across full conversation
 - Hidden states encode rich semantic + emotional + speaker information
 - Diffusion receives comprehensive conditioning signal
 - Result: Natural, expressive, context-aware speech ✅
 
 **Input/Output**:
+
 - **Input**: Embeddings (batch_size, seq_len, hidden_size)
 - **Output**:
   - Hidden states (batch_size, seq_len, hidden_size) → **Diffusion conditioning**
   - Logits via LM head → Token prediction
 
 ### 3. Acoustic Tokenizer (VAE)
+
 **Location**: `vibevoice/modular/modular_vibevoice_tokenizer.py:987`
 
 **Purpose**: Bidirectional conversion between audio waveforms and acoustic latents
 
 **Architecture**:
+
 ```mermaid
 graph LR
     A[Audio Waveform<br/>1 channel] --> B[Encoder]
@@ -247,11 +263,13 @@ graph LR
 ```
 
 **Input/Output**:
+
 - **Encode**: Audio (batch, 1, time) → Latents (batch, time/3200, 64)
 - **Decode**: Latents (batch, time/3200, 64) → Audio (batch, 1, time)
 - **Compression Ratio**: 3200x (hop_length = 8×5×5×4×2×2 = 3200)
 
 ### 4. Semantic Tokenizer (Encoder Only)
+
 **Location**: `vibevoice/modular/modular_vibevoice_tokenizer.py:1104`
 
 **Purpose**: Extract semantic features from audio for better speech understanding
@@ -259,15 +277,18 @@ graph LR
 **Architecture**: Similar to acoustic encoder but without decoder
 
 **Input/Output**:
+
 - **Input**: Audio (batch, 1, time)
 - **Output**: Semantic latents (batch, time/320, 512)
 
 ### 5. Speech Connectors
+
 **Location**: `vibevoice/modular/modeling_vibevoice.py:53`
 
 **Purpose**: Project speech latents into language model embedding space
 
 **Architecture**:
+
 ```mermaid
 graph LR
     A[Speech Latents] --> B[Linear Layer 1<br/>64/512 → 1536]
@@ -279,15 +300,18 @@ graph LR
 ```
 
 **Input/Output**:
+
 - **Acoustic Connector**: (batch, time, 64) → (batch, time, 1536)
 - **Semantic Connector**: (batch, time, 512) → (batch, time, 1536)
 
 ### 6. Diffusion Head
+
 **Location**: `vibevoice/modular/modular_vibevoice_diffusion_head.py:180`
 
 **Purpose**: Denoise speech latents using a diffusion process
 
 **Architecture**:
+
 ```mermaid
 graph TB
     A[Noisy Latent<br/>64 dims] --> B[Linear Projection<br/>64 → 1536]
@@ -316,29 +340,33 @@ graph TB
 **Layers**: 4 HeadLayers with AdaLN modulation
 
 **Input/Output**:
+
 - **Input**: Noisy latent (batch, 64) + Condition (batch, 1536) + Timestep
 - **Output**: Predicted noise/velocity (batch, 64)
 
 ---
 
-### Why Not UNet? Transformer-Based vs UNet Diffusion Architecture
+#### Why Not UNet? Transformer-Based vs UNet Diffusion Architecture
 
-#### Traditional UNet-Based Diffusion (e.g., Stable Diffusion, DDPM)
+##### Traditional UNet-Based Diffusion (e.g., Stable Diffusion, DDPM)
 
 **Architecture**:
+
 - **Encoder-Decoder structure** with skip connections
 - **Convolutional layers** for spatial processing
 - **Downsampling → Bottleneck → Upsampling** path
 - **Spatial inductive bias**: Assumes 2D/3D structure (images, spectrograms)
 
 **Typical Use Cases**:
+
 - Image generation (Stable Diffusion)
 - Spectrogram-based audio synthesis
 - Data with strong spatial correlations
 
-#### VibeVoice's Transformer-Based Diffusion Head
+##### VibeVoice's Transformer-Based Diffusion Head
 
 **Architecture**:
+
 - **Feedforward layers** with adaptive layer normalization (AdaLN)
 - **No convolutional structure** - pure MLP-based
 - **Flat latent representation** (64-dim vectors, not spatial)
@@ -353,23 +381,26 @@ graph TB
    - No 2D structure to exploit → UNet's spatial convolutions unnecessary
 
 2. **AdaLN Modulation** (`modular_vibevoice_diffusion_head.py:143-152`):
-   ```python
-   # Condition (LM hidden state + timestep) modulates each layer
-   shift_ffn, scale_ffn, gate_ffn = self.adaLN_modulation(c).chunk(3, dim=-1)
-   x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
-   ```
-   - **Shift & scale**: Adjust feature statistics per sample
-   - **Gate**: Control contribution of each layer
-   - **Flexible conditioning**: Rich context from 1.5B LM hidden states
 
-   **See detailed explanation**: [What is AdaLN Modulation?](#what-is-adaln-modulation-and-why-is-it-effective)
+```python
+# Condition (LM hidden state + timestep) modulates each layer
+shift_ffn, scale_ffn, gate_ffn = self.adaLN_modulation(c).chunk(3, dim=-1)
+x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
+```
+
+- **Shift & scale**: Adjust feature statistics per sample
+- **Gate**: Control contribution of each layer
+- **Flexible conditioning**: Rich context from 1.5B LM hidden states
+
+**See detailed explanation**: [What is AdaLN Modulation?](#what-is-adaln-modulation-and-why-is-it-effective)
 
 3. **Efficiency for Speech**:
-   - Speech latents are **low-dimensional** (64 dims) vs images (e.g., 512×512×3)
-   - Simple FFN sufficient for this scale
-   - UNet adds complexity without benefit for 1D temporal data
 
-#### Pros and Cons Comparison
+- Speech latents are **low-dimensional** (64 dims) vs images (e.g., 512×512×3)
+- Simple FFN sufficient for this scale
+- UNet adds complexity without benefit for 1D temporal data
+
+##### Pros and Cons Comparison
 
 | Aspect | **VibeVoice (Transformer FFN)** | **Traditional UNet** |
 |--------|----------------------------------|----------------------|
@@ -386,22 +417,26 @@ graph TB
 #### Why This Design Works for VibeVoice
 
 **1. Speech is Temporal, Not Spatial**:
+
 - Unlike images (2D) or spectrograms (time-frequency 2D), speech latents are **compressed temporal features**
 - No spatial locality to exploit → UNet's convolutions add unnecessary computation
 - Direct FFN processing is sufficient
 
 **2. Rich Conditioning from Language Model**:
+
 - The 1.5B parameter Qwen LM provides **rich contextual embeddings** (1536-dim)
 - Hidden states encode: text semantics, speaker identity, emotion, prosody, long-range context
 - AdaLN modulation leverages this conditioning at every layer
 - **This is the real "intelligence"** - diffusion head just refines the latent guided by LM
 
 **3. Lightweight Design Enables Real-Time**:
+
 - Only 4 layers × 25 diffusion steps = 100 forward passes per speech token
 - Much faster than UNet's deep encoder-decoder
 - Critical for streaming TTS applications
 
 **4. Proven in Related Work**:
+
 - Similar designs in DiT (Diffusion Transformer) for images
 - MaskGIT and related models use transformer-based diffusion
 - Trend: "Attention is all you need" extending to diffusion models
@@ -409,6 +444,7 @@ graph TB
 #### Code Evidence
 
 **Zero-Init for Stability** (`modular_vibevoice_diffusion_head.py:230-242`):
+
 ```python
 def initialize_weights(self):
     # Zero-out adaLN modulation layers → stable training
@@ -421,13 +457,14 @@ def initialize_weights(self):
 ```
 
 **Modulation Mechanism** (`modular_vibevoice_diffusion_head.py:149-151`):
+
 ```python
 # Each layer modulated by condition (LM hidden state + timestep)
 shift_ffn, scale_ffn, gate_ffn = self.adaLN_modulation(c).chunk(3, dim=-1)
 x = x + gate_ffn * self.ffn(modulate(self.norm(x), shift_ffn, scale_ffn))
 ```
 
-#### Conclusion
+#### Conclusion of Diffusion Head
 
 VibeVoice uses a **transformer-based diffusion head instead of UNet** because:
 
@@ -440,7 +477,7 @@ VibeVoice uses a **transformer-based diffusion head instead of UNet** because:
 
 ---
 
-### What is AdaLN Modulation and Why Is It Effective?
+#### What is AdaLN Modulation and Why Is It Effective?
 
 **AdaLN** (Adaptive Layer Normalization) is a conditioning mechanism that allows external information (like text semantics, speaker identity, timestep) to **dynamically control** the behavior of neural network layers. In VibeVoice, it's the key mechanism that injects rich contextual information from the language model into the diffusion process.
 
@@ -465,7 +502,7 @@ Traditional conditioning methods have limitations:
 
 **AdaLN's Solution**: Directly modulate the **internal statistics** of each layer based on condition.
 
-#### How AdaLN Works in VibeVoice
+##### How AdaLN Works in VibeVoice
 
 **Step-by-Step Mechanism** (`modular_vibevoice_diffusion_head.py:143-152`):
 
@@ -488,6 +525,7 @@ x = x + gate_ffn * output                          # Gated residual connection
 ```
 
 **The Modulation Function** (`modular_vibevoice_diffusion_head.py:35-37`):
+
 ```python
 def modulate(x, shift, scale):
     return x * (1 + scale) + shift
@@ -496,61 +534,73 @@ def modulate(x, shift, scale):
 #### The Three Components of AdaLN
 
 **1. Scale (Multiplicative Modulation)**:
-```
+
+```text
 modulated = x * (1 + scale)
 ```
+
 - **Purpose**: Controls the **magnitude** of each feature dimension
 - **Effect**: Amplifies or suppresses specific features based on condition
 - **Example**: For excited speech → amplify high-energy features; for calm speech → suppress them
 
 **2. Shift (Additive Modulation)**:
-```
+
+```text
 modulated = ... + shift
 ```
+
 - **Purpose**: Adjusts the **mean/bias** of each feature dimension
 - **Effect**: Changes the "baseline" activation level
 - **Example**: Shift prosody features up for emphasis, down for flat delivery
 
 **3. Gate (Contribution Control)**:
-```
+
+```text
 x = x + gate * ffn_output
 ```
+
 - **Purpose**: Controls how much the layer **contributes** to the output
 - **Effect**: Dynamically enable/disable layer contributions
 - **Example**: For simple phonemes → gate=small (skip complex processing); for complex sounds → gate=large
 
-#### Why AdaLN is Exceptionally Effective for Conditioning
+##### Why AdaLN is Exceptionally Effective for Conditioning
 
 **1. Direct Statistical Control**:
+
 - AdaLN **directly manipulates feature statistics** (mean via shift, variance via scale)
 - This is mathematically equivalent to changing the "filter characteristics" of the layer
 - Much more powerful than just adding bias or concatenating features
 
 **2. Per-Sample Adaptation**:
+
 - Each sample gets **unique** shift/scale/gate parameters based on its condition
 - Same network architecture, but behavior adapts per-sample
 - Example: Same FFN processes both male/female voices differently due to different modulation
 
 **3. Rich Conditioning from Language Model**:
+
 ```python
 # Line 264: Combine LM hidden state + timestep embedding
 c = condition + t  # condition (1536-dim) from LM, t from timestep embedder
 ```
+
 - Condition vector is 1536-dim (same as LM hidden size)
 - Projects to 3×1536 = 4608 parameters per layer (shift, scale, gate)
 - **Each layer has 4608 "knobs"** tuned by the condition!
 
 **4. Gradient Flow**:
+
 - Gradients flow **directly** from output through modulation to condition
 - No need to propagate through many layers (as in concatenation)
 - Efficient learning of condition-to-output mapping
 
 **5. Computational Efficiency**:
+
 - Only 1 linear layer per AdaLN module: `Linear(1536, 3×1536)`
 - Much cheaper than cross-attention: O(d²) vs O(d×n) where n is sequence length
 - No attention computation needed
 
-#### Visual Comparison: AdaLN vs Alternatives
+##### Visual Comparison: AdaLN vs Alternatives
 
 ```mermaid
 graph TB
@@ -597,24 +647,28 @@ graph TB
     end
 ```
 
-#### Mathematical Intuition
+##### Mathematical Intuition
 
 **Standard Layer Normalization**:
-```
+
+```text
 output = FFN(LayerNorm(x))
        = FFN((x - μ) / σ)
 ```
+
 - Fixed normalization: Same μ, σ for all samples
 
 **AdaLN**:
-```
+
+```text
 output = FFN((x - μ) / σ * (1 + scale(c)) + shift(c))
        = FFN((x - μ_effective(c)) / σ_effective(c))
 ```
+
 - **Condition-dependent normalization**: μ and σ change per sample based on condition `c`
 - Equivalent to having **infinite different networks**, one per condition
 
-#### Code Flow in VibeVoice
+##### Code Flow in VibeVoice
 
 ```python
 # modeling_vibevoice_inference.py:620
@@ -640,52 +694,60 @@ for layer in self.layers:
     x = layer(x, c)  # Each HeadLayer uses AdaLN with condition 'c'
 ```
 
-#### Why AdaLN is Perfect for Speech Generation
+##### Why AdaLN is Perfect for Speech Generation
 
 **1. Fine-Grained Control**: Speech requires precise control over:
-   - Phoneme characteristics (vowel formants, consonant sharpness)
-   - Prosody (pitch, duration, energy)
-   - Speaker identity (vocal tract shape, breathiness)
 
-   AdaLN's shift/scale/gate gives **independent control** over 1536 feature dimensions.
+- Phoneme characteristics (vowel formants, consonant sharpness)
+- Prosody (pitch, duration, energy)
+- Speaker identity (vocal tract shape, breathiness)
+
+AdaLN's shift/scale/gate gives **independent control** over 1536 feature dimensions.
 
 **2. Rich Context from LM**: The 1.5B parameter language model encodes:
-   - Text semantics: "What to say"
-   - Emotional tone: "How to say it"
-   - Speaker identity: "Who is saying it"
-   - Dialogue context: "When in conversation"
+
+- Text semantics: "What to say"
+- Emotional tone: "How to say it"
+- Speaker identity: "Who is saying it"
+- Dialogue context: "When in conversation"
 
    AdaLN **directly leverages** this 1536-dim rich representation.
 
 **3. Timestep Awareness**: Diffusion timestep `t` is added to condition:
+
 ```python
 c = condition + t  # Line 264
 ```
-   - Early steps (high noise): AdaLN guides **global structure** (pitch contour, rhythm)
-   - Late steps (low noise): AdaLN refines **local details** (formant precision, breathiness)
+
+- Early steps (high noise): AdaLN guides **global structure** (pitch contour, rhythm)
+- Late steps (low noise): AdaLN refines **local details** (formant precision, breathiness)
 
 **4. Computational Efficiency**:
-   - AdaLN adds minimal computation: `1 Linear(1536, 4608)` per layer
-   - 4 layers × ~7M params = ~28M params for modulation
-   - Compare to cross-attention: Would need ~50M+ params for similar expressiveness
 
-#### Comparison to UNet Conditioning
+- AdaLN adds minimal computation: `1 Linear(1536, 4608)` per layer
+- 4 layers × ~7M params = ~28M params for modulation
+- Compare to cross-attention: Would need ~50M+ params for similar expressiveness
+
+##### Comparison to UNet Conditioning
 
 **UNet (e.g., Stable Diffusion)**:
+
 - Uses **cross-attention** for conditioning
 - Condition (text embeddings) is sequential → attend over tokens
 - Expensive: O(spatial_size × text_length) attention
 
 **VibeVoice (AdaLN)**:
+
 - Condition is **single vector** per sample (1536-dim LM hidden state)
 - No need for cross-attention over sequence
 - Cheap: O(1536²) linear projection (already computed by LM!)
 
 This is another reason why VibeVoice doesn't need UNet - **AdaLN is more efficient for flat latent conditioning**.
 
-#### Empirical Evidence
+##### Empirical Evidence
 
 **Zero-Init Training Trick** (`modular_vibevoice_diffusion_head.py:237-242`):
+
 ```python
 # Zero-out adaLN modulation layers at initialization
 for layer in self.layers:
@@ -693,17 +755,19 @@ for layer in self.layers:
 ```
 
 At initialization:
+
 - `shift = 0`, `scale = 0`, `gate = 0`
 - `modulate(x, 0, 0) = x * (1+0) + 0 = x` (identity)
 - `x + 0 * ffn(x) = x` (skip FFN)
 - Network starts as **identity function**
 
 Why this works:
+
 - Training is **stable** - no random behavior at start
 - Network gradually learns to use shift/scale/gate
 - Proves AdaLN **truly controls** layer behavior (starts disabled, learns to enable)
 
-#### Conclusion
+##### AdaLN Conclusion
 
 AdaLN modulation is effective for conditioning because:
 
@@ -718,11 +782,13 @@ In VibeVoice, AdaLN is the **bridge** between the language model's rich contextu
 ---
 
 ### 7. LM Head
+
 **Location**: `modeling_vibevoice_inference.py:71`
 
 **Purpose**: Project language model hidden states to vocabulary logits
 
 **Input/Output**:
+
 - **Input**: Hidden states (batch, seq_len, 1536)
 - **Output**: Logits (batch, seq_len, vocab_size)
 
@@ -783,6 +849,7 @@ flowchart TD
 ### Detailed Generation Steps
 
 #### Step 1: Input Processing
+
 **Location**: `modeling_vibevoice_inference.py:323-371`
 
 ```mermaid
@@ -798,12 +865,14 @@ sequenceDiagram
 ```
 
 **Inputs**:
+
 - `input_ids`: Text tokens with special markers
 - `speech_tensors`: Voice sample waveforms
 - `speech_masks`: Valid frames indicator
 - `speech_input_mask`: Where to insert speech embeddings
 
 #### Step 2: Speech Input Processing
+
 **Location**: `modeling_vibevoice_inference.py:150-178`
 
 ```mermaid
@@ -824,21 +893,22 @@ flowchart TD
 
 ---
 
-### Detailed Process Breakdown
+##### Speech Input Detailed Process Breakdown
 
-#### 2.1 Why Process Speech Inputs This Way?
+###### Why Process Speech Inputs This Way?
 
 **Design Philosophy**: VibeVoice needs to understand **"what voice sounds like"** from audio samples to clone it in generation.
 
 **Key Challenge**:
+
 - Raw audio: 24,000 samples/second = **too high-dimensional** for LM
 - Need: Compact representation capturing voice characteristics (timbre, pitch, speaking style)
 
 **Solution**: Use a **learned acoustic VAE** to compress audio into meaningful latent vectors
 
-#### 2.2 Step-by-Step Process
+###### Speech Input Step-by-Step Process
 
-**Step 1: Encode Audio to Latents** (`modeling_vibevoice_inference.py:155`)
+**Speech Input Step 1: Encode Audio to Latents** (`modeling_vibevoice_inference.py:155`)
 
 ```python
 encoder_output = self.model.acoustic_tokenizer.encode(speech_tensors.unsqueeze(1))
@@ -847,13 +917,15 @@ encoder_output = self.model.acoustic_tokenizer.encode(speech_tensors.unsqueeze(1
 ```
 
 **What happens**:
+
 - **Downsampling**: Audio passes through 6 convolutional layers with ratios [8,5,5,4,2,2]
 - **Compression**: 3200x reduction (24,000 samples/sec → 7.5 frames/sec)
 - **Feature extraction**: Each frame captures 133ms of audio characteristics
 - **Output**: Mean vector (64-dim) representing audio features
 
 **Architecture** (`modular_vibevoice_tokenizer.py:660-754`):
-```
+
+```text
 Audio (1 channel)
   → SConv1d (stem)
   → Downsample layer 1 (stride 8)  → 32 filters
@@ -865,7 +937,7 @@ Audio (1 channel)
   → Head (Conv1d)                  → 64 dims (latent)
 ```
 
-**Step 2: Sample from Distribution** (`modeling_vibevoice_inference.py:156`)
+**Speech Input Step 2: Sample from Distribution** (`modeling_vibevoice_inference.py:156`)
 
 ```python
 acoustic_latents = encoder_output.sample(dist_type=self.acoustic_tokenizer.std_dist_type)[0]
@@ -873,15 +945,17 @@ acoustic_latents = encoder_output.sample(dist_type=self.acoustic_tokenizer.std_d
 ```
 
 **Distribution Types**:
+
 - **`fix`**: Use fixed std (0.5 from config) - deterministic with slight noise
 - **`gaussian`**: Sample from learned distribution - more stochastic
 
 **Why sample?**:
+
 - Adds **slight variability** to avoid overfitting to exact voice samples
 - VAE regularization: ensures latent space is smooth and continuous
 - During inference: Usually `fix` for consistency
 
-**Step 3: Apply Scaling and Bias** (`modeling_vibevoice_inference.py:159`)
+**Speech Input Step 3: Apply Scaling and Bias** (`modeling_vibevoice_inference.py:159`)
 
 ```python
 acoustic_features = (acoustic_latents + self.speech_bias_factor) * self.speech_scaling_factor
@@ -890,6 +964,7 @@ acoustic_features = (acoustic_latents + self.speech_bias_factor) * self.speech_s
 **Purpose**: **Normalize latent statistics** for stable training
 
 **How computed** (`modeling_vibevoice.py:299-316`):
+
 ```python
 # Computed from training data statistics
 speech_scaling_factor = 1.0 / std(latents)  # Scale to unit variance
@@ -897,11 +972,12 @@ speech_bias_factor = -mean(latents)         # Center to zero mean
 ```
 
 **Effect**:
+
 - Before: Latents have arbitrary mean/std (e.g., mean=5.2, std=2.3)
 - After: Latents are normalized (mean≈0, std≈1)
 - **Why**: Stable gradient flow, consistent embeddings across speakers
 
-**Step 4: Connect to LM Space** (`modeling_vibevoice_inference.py:162`)
+**Speech Input Step 4: Connect to LM Space** (`modeling_vibevoice_inference.py:162`)
 
 ```python
 acoustic_connected = self.model.acoustic_connector(acoustic_features)[speech_masks.cpu()]
@@ -910,6 +986,7 @@ acoustic_connected = self.model.acoustic_connector(acoustic_features)[speech_mas
 ```
 
 **Acoustic Connector** (`modeling_vibevoice.py:53-75`):
+
 ```python
 # Two-layer MLP with RMSNorm
 Linear(64 → 1536)
@@ -918,6 +995,7 @@ Linear(1536 → 1536)
 ```
 
 **What it does**:
+
 - Projects 64-dim acoustic latents to 1536-dim LM embedding space
 - Allows LM to "understand" voice features alongside text
 - Filtered by `speech_masks`: Only keep valid audio frames (ignore padding)
@@ -932,54 +1010,61 @@ if speech_input_mask is not None:
 **Effect**: Replace placeholder text tokens with actual voice embeddings
 
 **Example sequence**:
-```
+
+```text
 Before: [<text> <text> <VOICE_PLACEHOLDER> <text> ...]
 After:  [<text> <text> <voice_emb_0> <voice_emb_1> ... <voice_emb_N> <text> ...]
 ```
 
 ---
 
-### Why This Approach? Design Rationale
+##### Why the Speech Input procoss Approach? Design Rationale
 
-#### 1. **VAE Over Raw Audio**
+###### 1. **VAE Over Raw Audio**
 
 **Problem with raw audio**:
+
 - 24,000 samples/sec × 3 seconds = 72,000 dimensions
 - LM cannot process such high-dimensional input efficiently
 - Most samples are redundant (adjacent samples highly correlated)
 
 **VAE solution**:
+
 - Compresses to 7.5 frames/sec × 3 seconds = ~23 latent vectors
 - Each 64-dim vector captures **perceptually relevant features**
 - 3200x compression while preserving voice identity
 
-#### 2. **Acoustic Connector (MLP) Over Direct Use**
+##### 2. **Acoustic Connector (MLP) Over Direct Use**
 
 **Why not use latents directly?**
+
 - Acoustic latents live in "audio feature space" (spectral patterns, formants)
 - LM embeddings live in "semantic space" (words, concepts)
 - **Mismatch**: LM cannot directly interpret raw acoustic features
 
 **MLP projection**:
+
 - Learns transformation from audio features → semantic features
 - Enables LM to treat voice as "another modality" like text
 - Similar to vision-language models (CLIP: image features → text space)
 
-#### 3. **Scaling/Bias Normalization**
+###### 3. **Scaling/Bias Normalization**
 
 **Why normalize?**:
-- Different speakers → different latent statistics
-- Male voice: lower formants → different latent means
-- Female voice: higher formants → different latent means
+
+- Different speakers different latent statistics
+- Male voice: lower formants different latent means
+- Female voice: higher formants different latent means
 
 **Normalization effect**:
+
 - Removes **speaker-specific bias**, keeps **voice characteristics**
 - Stabilizes training across diverse speakers
 - Ensures embeddings have consistent magnitude for LM
 
 ---
 
-### VibeVoice VAE vs Stable Diffusion VAE
+##### VibeVoice VAE vs Stable Diffusion VAE
 
 | Aspect | **VibeVoice Acoustic VAE** | **Stable Diffusion VAE** |
 |--------|---------------------------|--------------------------|
@@ -996,11 +1081,12 @@ After:  [<text> <text> <voice_emb_0> <voice_emb_1> ... <voice_emb_N> <text> ...]
 | **KL Regularization** | Minimal (fix_std=0.5) | Standard KL divergence |
 | **Purpose** | Voice feature extraction | Image compression for diffusion |
 
-#### Key Differences Explained
+##### Key Differences Explained (VibeVoice VAE vs SD VAE)
 
-**1. 1D vs 2D Convolutions**
+**1D vs 2D Convolutions** vibevoice vs stable diffusion
 
 **VibeVoice**:
+
 ```python
 # 1D temporal convolution
 SConv1d(in_channels, out_channels, kernel_size=7, stride=8)
@@ -1008,6 +1094,7 @@ SConv1d(in_channels, out_channels, kernel_size=7, stride=8)
 ```
 
 **Stable Diffusion**:
+
 ```python
 # 2D spatial convolution
 Conv2d(in_channels, out_channels, kernel_size=3, stride=2)
@@ -1015,31 +1102,36 @@ Conv2d(in_channels, out_channels, kernel_size=3, stride=2)
 ```
 
 **Why**:
+
 - Audio is inherently **1D temporal signal** (time series)
 - Images are **2D spatial data** (height × width)
 - Different inductive biases for different modalities
 
-**2. Much Higher Compression (3200x vs 64x)**
+**Much Higher Compression (3200x vs 64x)** vibevoice vs stable diffusion
 
 **VibeVoice**:
+
 - 1 second audio = 24,000 samples → 7.5 latent frames
 - **Goal**: Extreme compression to make audio manageable for LM
 - **Trade-off**: Accepts some detail loss, relies on diffusion to reconstruct
 
 **Stable Diffusion**:
+
 - 512×512 image = 262,144 pixels → 64×64×4 = 16,384 latents
 - **Goal**: Preserve visual details (text, faces) while compressing
 - **Trade-off**: Less compression, more detail preserved
 
 **Why VibeVoice needs higher compression**:
+
 - Audio has much higher temporal redundancy than images have spatial redundancy
 - Adjacent audio samples are highly correlated (sampling theorem)
 - Speech changes slowly: phonemes last 50-100ms
 - Can compress 133ms chunks into single vector without major information loss
 
-**3. ConvNeXt-style vs U-Net-style**
+**ConvNeXt-style vs U-Net-style** vibevoice vs stable diffusion
 
 **VibeVoice** (ConvNeXt-inspired):
+
 ```python
 # modular_vibevoice_tokenizer.py:660-754
 Downsampling layers (no skip connections)
@@ -1048,80 +1140,94 @@ Downsampling layers (no skip connections)
   → ...
   → Stage 6: 8 ConvNeXt blocks
 ```
+
 - **No skip connections** between encoder and decoder
 - **More aggressive compression**
 - Relies on diffusion to fill in details
 
 **Stable Diffusion** (U-Net):
+
 ```python
 Encoder with skip connections
   → Decoder uses skip connections from encoder
 ```
+
 - **Skip connections** preserve fine details
 - Better reconstruction of high-frequency information
 - Important for images (text, edges, faces)
 
 **Why VibeVoice doesn't need U-Net**:
+
 - Audio reconstruction handled by **diffusion model**, not VAE decoder
 - VAE only used for **encoding voice samples** during inference
 - Decoder used only for **generated speech**, where diffusion already refined latents
 
-**4. Causal Design for Streaming**
+**Causal Design for Streaming** vibevoice vs stable diffusion
 
 **VibeVoice**:
+
 ```python
 # modular_vibevoice_tokenizer.py:678
 self.causal = True  # Encoder/decoder are causal
 ```
+
 - **Causal convolutions**: Only look at past frames, not future
 - Enables **streaming inference**: process audio chunk-by-chunk
 - Critical for real-time TTS applications
 
 **Stable Diffusion**:
+
 - Non-causal: Can look at entire image bidirectionally
 - Images don't have temporal ordering requirement
 - No streaming constraint
 
-**5. Minimal KL Regularization**
+**Minimal KL Regularization** vibevoice vs stable diffusion
 
 **VibeVoice**:
+
 ```python
 # qwen2.5_1.5b_64k.json:31
 "fix_std": 0.5
 "std_dist_type": "gaussian"  # or "fix"
 ```
+
 - **Fixed standard deviation** (0.5)
 - Minimal KL divergence term
 - More like **deterministic autoencoder** with slight noise
 
 **Why**:
+
 - Voice identity needs to be **precisely preserved**
 - Too much KL regularization → blur different speakers
 - Slight noise (0.5 std) prevents overfitting to exact samples
 
 **Stable Diffusion**:
+
 - Full KL-divergence loss during VAE training
 - Encourages smooth latent space
 - Balances reconstruction vs regularization
 
-**6. Depthwise Convolution (ConvNeXt-style)**
+**Depthwise Convolution (ConvNeXt-style)** vibevoice vs stable diffusion
 
 **VibeVoice**:
+
 ```python
 # modular_vibevoice_tokenizer.py:692
 mixer_layer = "depthwise_conv"  # Efficient conv operation
 ```
+
 - **Depthwise separable convolutions**: Process each channel independently
 - **More parameter efficient** than standard conv
 - Scales better to deeper networks
 
 **Stable Diffusion**:
+
 - Standard 2D convolutions
 - More parameters, but spatial processing needs full connectivity
 
 ---
 
-### Code Flow Summary
+##### Code Flow Summary
 
 **Full pipeline** (voice sample → LM embedding):
 
@@ -1154,7 +1260,7 @@ inputs_embeds[voice_position] = acoustic_connected[0]  # Use all 22 frames
 
 ---
 
-### Why This Matters for Voice Cloning
+##### Why This Matters for Voice Cloning
 
 **The key insight**: This processing enables the LM to "understand" voice characteristics:
 
@@ -1164,16 +1270,19 @@ inputs_embeds[voice_position] = acoustic_connected[0]  # Use all 22 frames
 4. **Diffusion head** receives LM hidden state → Knows what voice to synthesize
 
 Without proper speech input processing:
+
 - ❌ LM cannot distinguish between speakers
 - ❌ Generated speech sounds generic
 - ❌ Voice cloning fails
 
 With VibeVoice's approach:
+
 - ✅ LM learns speaker embeddings from voice samples
 - ✅ Hidden states encode voice characteristics
 - ✅ Diffusion generates speech matching target voice
 
 **Code Reference**:
+
 ```python
 # vibevoice/modular/modeling_vibevoice_inference.py:150-178
 def _process_speech_inputs(self, speech_tensors, speech_masks, speech_type="audio"):
@@ -1194,6 +1303,7 @@ def _process_speech_inputs(self, speech_tensors, speech_masks, speech_type="audi
 ```
 
 #### Step 3: Prefill Phase
+
 **Location**: `modeling_vibevoice_inference.py:461-476`
 
 ```mermaid
@@ -1212,11 +1322,13 @@ sequenceDiagram
 **Purpose**: Process the entire input sequence at once to initialize KV cache
 
 **Key Operations**:
+
 - Insert speech embeddings into text embedding sequence
 - Run full forward pass through language model
 - Initialize KV cache for efficient autoregressive generation
 
 #### Step 4: Autoregressive Loop
+
 **Location**: `modeling_vibevoice_inference.py:426-670`
 
 ```mermaid
@@ -1254,6 +1366,7 @@ flowchart TD
 ```
 
 **Main Loop Operations (Code Flow)**:
+
 1. **Forward pass** (line 474): Process current embedding through model
 2. **Logits processing** (line 482-484): Apply token constraints and logits processors
 3. **Token selection** (line 486-492): Sample or argmax from logits
@@ -1268,6 +1381,7 @@ flowchart TD
 7. **Cache updates**: KV cache updated automatically during forward pass
 
 #### Step 5: Diffusion Sampling (Core Speech Generation)
+
 **Location**: `modeling_vibevoice_inference.py:567-667` and `modeling_vibevoice_inference.py:692-704`
 
 ```mermaid
@@ -1290,12 +1404,13 @@ flowchart TB
     K --> L[Encode to Semantic]
     L --> M[Create Combined<br/>Embedding]
 
-    style E fill:#f44336
+    style E fill:#f44336,color:#FFFFFF
     style G fill:#ff9800
-    style K fill:#9c27b0
+    style K fill:#9c27b0,color:#FFFFFF
 ```
 
 **Classifier-Free Guidance (CFG)**:
+
 ```python
 # modeling_vibevoice_inference.py:697-702
 combined = torch.cat([half, half], dim=0)
@@ -1305,10 +1420,12 @@ half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
 ```
 
 **CFG Scale**: Controls generation quality vs diversity (default: 3.0)
+
 - Higher scale → More conditioned on text, less diverse
 - Lower scale → More diverse, less faithful to text
 
 **Diffusion Process Details**:
+
 1. **Initialize**: Start with random noise (64-dim latent)
 2. **Iterative Denoising**: Run for N steps (default: 25)
 3. **Condition**: Use language model hidden state
@@ -1317,6 +1434,7 @@ half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
 6. **Output**: Clean speech latent
 
 #### Step 6: Audio Streaming (Optional)
+
 **Location**: `modeling_vibevoice_inference.py:647-650`
 
 ```mermaid
@@ -1335,11 +1453,13 @@ sequenceDiagram
 ```
 
 **Streaming Features**:
+
 - Real-time audio generation as tokens are produced
 - Convolutional streaming cache for causality
 - Chunk-by-chunk processing for low latency
 
 #### Step 7: Result Assembly
+
 **Location**: `modeling_vibevoice_inference.py:674-689`
 
 ```mermaid
@@ -1357,6 +1477,7 @@ flowchart TD
 ```
 
 **Output Structure**:
+
 - `sequences`: Generated token sequences (batch, seq_len)
 - `speech_outputs`: List of audio tensors (batch, 1, time)
 - `reach_max_step_sample`: Boolean flags for truncated samples
@@ -1385,6 +1506,7 @@ next_inputs_embeds[diffusion_indices] = diffusion_embeds  # Override!
 ```
 
 **Token Processing Summary**:
+
 - **Text tokens**: Use default embedding from lookup table → Feed to next iteration
 - **`<speech_start>`**: Use default embedding + Refresh negative cache (line 542-560)
 - **`<speech_end>`**: Use default embedding + Clear tokenizer caches (line 535-540)
@@ -1392,6 +1514,7 @@ next_inputs_embeds[diffusion_indices] = diffusion_embeds  # Override!
 - **`<EOS>`**: Use default embedding + Mark sample as finished
 
 This design allows the model to:
+
 1. Learn meaningful embeddings for special tokens during training
 2. Override speech token embeddings with actual acoustic content during generation
 3. Use a unified architecture for both text and speech processing
@@ -1401,6 +1524,7 @@ This design allows the model to:
 ### Token Types and Special Tokens
 
 **Special Tokens**:
+
 - `<speech_start>`: Marks beginning of speech segment
 - `<speech_diffusion>`: Each represents ~133ms of audio (3200 samples at 24kHz)
 - `<speech_end>`: Marks end of speech segment
@@ -1426,7 +1550,7 @@ Each `<speech_diffusion>` token represents a **compressed chunk of audio**. Here
 
 **Visual Representation**:
 
-```
+```text
 Audio Waveform (24kHz):
 [3200 samples] → Encoder → [1 latent vector (64-dim)] → Decoder → [3200 samples]
 |←  133.33ms →|                                                    |← 133.33ms →|
@@ -1467,24 +1591,28 @@ def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
    - Each diffusion token still requires 25 diffusion steps, but total tokens reduced
 
 **Comparison to Other Models**:
+
 - **Codec models** (e.g., EnCodec): Often use 50-75 Hz frame rates (~13-20ms per token)
 - **VibeVoice**: 7.5 Hz effective rate (~133ms per token) - much higher compression
 - **Trade-off**: Higher compression → fewer tokens but requires more powerful diffusion to reconstruct quality
 
 **Example - 1 Second of Speech**:
+
 - Audio: 24,000 samples at 24kHz = 1 second
 - Compressed: 24,000 ÷ 3200 = 7.5 tokens
 - Pattern: `<speech_start> <speech_diffusion> × 7-8 <speech_end>`
 - Each `<speech_diffusion>` token triggers diffusion sampling (25 steps)
 
 **Generation Pattern**:
-```
+
+```text
 [Text tokens] <speech_start> <speech_diffusion> × N <speech_end> [More text] ...
 ```
 
 ### Caching Mechanisms
 
 #### 1. KV Cache (Attention)
+
 **Purpose**: Store attention keys/values for efficient autoregressive generation
 
 **Type**: DynamicCache from transformers
@@ -1492,6 +1620,7 @@ def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
 **Management**: Updated every generation step
 
 #### 2. Acoustic Streaming Cache
+
 **Purpose**: Store convolutional states for streaming audio decoding
 
 **Type**: VibeVoiceTokenizerStreamingCache
@@ -1499,6 +1628,7 @@ def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
 **Cleared**: At `<speech_end>` tokens
 
 #### 3. Semantic Streaming Cache
+
 **Purpose**: Store convolutional states for semantic encoding
 
 **Type**: VibeVoiceTokenizerStreamingCache
@@ -1512,18 +1642,20 @@ def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
 **Two Modes**:
 
 1. **Refresh Negative** (default: True)
-   ```mermaid
+
+```mermaid
    flowchart LR
        A[speech_start] --> B[Reset Negative Cache<br/>to Initial State]
        B --> C[Track at Each Token]
-   ```
+```
 
 2. **Non-Refresh Negative**
-   ```mermaid
+
+```mermaid
    flowchart LR
        A[Every Token] --> B[Forward Negative Path]
        B --> C[Correct Non-Diffusion<br/>Samples]
-   ```
+ ```
 
 **Code Reference**: `modeling_vibevoice_inference.py:543-618`
 
@@ -1532,17 +1664,20 @@ def __init__(self, ..., speech_tok_compress_ratio=3200, ...):
 **Purpose**: Normalize speech latents for stable training and inference
 
 **Formula**:
+
 ```python
 normalized_latent = (latent + bias_factor) * scaling_factor
 ```
 
 **Computation** (`modeling_vibevoice.py:299-316`):
+
 1. Calculate mean and std from training data
 2. Compute scaling factor: `1.0 / std`
 3. Compute bias factor: `-mean`
 4. Apply in distributed training if needed
 
 **Inverse Operation** (before decoding):
+
 ```python
 latent = normalized_latent / scaling_factor - bias_factor
 ```
@@ -1554,6 +1689,7 @@ latent = normalized_latent / scaling_factor - bias_factor
 **Implementation**: `modeling_vibevoice_inference.py:44-57`
 
 **Valid Tokens**:
+
 - `speech_start_id`
 - `speech_diffusion_id`
 - `speech_end_id`
@@ -1565,6 +1701,7 @@ latent = normalized_latent / scaling_factor - bias_factor
 ### Generation Configuration
 
 **Key Parameters**:
+
 - `max_new_tokens`: Maximum tokens to generate
 - `max_length_times`: Multiplier for max generation length (default: 2)
 - `ddpm_inference_steps`: Number of diffusion steps (default: 25)
@@ -1572,6 +1709,7 @@ latent = normalized_latent / scaling_factor - bias_factor
 - `do_sample`: Use sampling vs argmax (default: False)
 
 **Stopping Criteria**:
+
 1. EOS token generated
 2. Max generation length reached
 3. External stop signal (via `stop_check_fn`)
@@ -1584,6 +1722,7 @@ latent = normalized_latent / scaling_factor - bias_factor
 ### 1. Streaming Generation
 
 **Audio Streamer Interface**:
+
 ```python
 class AudioStreamer:
     def put(self, audio_chunk, sample_indices): ...
@@ -1597,6 +1736,7 @@ class AudioStreamer:
 **Support**: Full batch processing with per-sample tracking
 
 **Features**:
+
 - Individual sample completion tracking
 - Per-sample max length limits
 - Batch-aware cache management
@@ -1604,11 +1744,13 @@ class AudioStreamer:
 ### 3. Diagnostic Features
 
 **Verbose Mode**:
+
 - Step-by-step progress logging
 - Token type identification
 - Sample completion notifications
 
 **Progress Bar**:
+
 - Active sample count
 - Generation step tracking
 
@@ -1651,35 +1793,43 @@ The `VibeVoiceForConditionalInference` model implements a sophisticated pipeline
 ### Key Architectural Insights
 
 #### 1. **Language Model Has Dual Role** (Critical!)
+
 The large language model (1.5B Qwen) is NOT just for token prediction:
+
 - **Role 1**: Predict WHEN to generate speech (next token)
 - **Role 2**: Provide rich contextual conditioning for HOW to generate speech
 - Hidden states encode: semantics, emotion, speaker identity, prosody, long-range context
 - This is why a simple MLP cannot replace it - context understanding is essential
 
 #### 2. **Unified Embedding Pipeline**
+
 All tokens (text + speech) use the same embedding lookup initially:
+
 - Default embeddings for text, control, and special tokens
 - Only `<speech_diffusion>` tokens override embeddings with acoustic+semantic features
 - Enables unified architecture while preserving speech quality
 
 #### 3. **Dual Tokenizer System**
+
 - **Acoustic tokenizer** (VAE): Bidirectional audio ↔ latent conversion
 - **Semantic tokenizer** (Encoder): Extract meaning from generated audio
 - Combined features create richer speech representations than single tokenizer
 
 #### 4. **Diffusion for Quality**
+
 - Language model predicts discrete tokens (sequence structure)
 - Diffusion model generates continuous latents (audio quality)
 - Classifier-Free Guidance ensures conditioning fidelity
 - Separation of concerns: structure vs quality
 
 #### 5. **Streaming Architecture**
+
 - Convolutional caches enable chunk-by-chunk processing
 - Real-time audio generation as tokens are produced
 - Critical for interactive applications (voice assistants, real-time dubbing)
 
 **Model Files**:
+
 - Main inference: `vibevoice/modular/modeling_vibevoice_inference.py`
 - Core model: `vibevoice/modular/modeling_vibevoice.py`
 - Language backbone: `vibevoice/modular/modular_vibevoice_qwen.py`
@@ -1699,12 +1849,14 @@ This appendix provides context on Adaptive Layer Normalization (AdaLN) and its a
 **Paper**: "Arbitrary Style Transfer in Real-time with Adaptive Instance Normalization" - Huang & Belongie
 
 **Key Innovation**:
+
 - Introduced adaptive normalization for style transfer
 - Unlike Batch/Instance Normalization, AdaIN has **no learnable affine parameters**
 - Instead, **adaptively computes** affine parameters from style input
 - Formula: `AdaIN(x, y) = σ(y) * ((x - μ(x)) / σ(x)) + μ(y)`
 
 **Impact**:
+
 - Enabled real-time arbitrary style transfer
 - Foundation for subsequent adaptive normalization techniques
 - Demonstrated power of input-dependent feature modulation
@@ -1714,22 +1866,26 @@ This appendix provides context on Adaptive Layer Normalization (AdaLN) and its a
 **StyleGAN (2018)** - Karras et al., NVIDIA
 
 **Architecture**:
+
 - Style-based generator using **adaptive instance normalization**
 - Affine parameters (scale/shift) computed from learned style vectors
 - Each layer receives different style parameters
 - No fixed normalization parameters
 
 **Key Features**:
+
 - Disentangled latent space control
 - Progressive growing for high-resolution synthesis
 - Style mixing for fine-grained control
 
 **StyleGAN2 (2019)** and **StyleGAN3 (2021)**:
+
 - Refined AdaIN mechanisms
 - Improved training stability
 - Better handling of spatial information
 
 **Legacy**:
+
 - Proved adaptive normalization superior to fixed normalization in GANs
 - Inspired diffusion models to adopt similar techniques
 - Established pattern: **condition → affine parameters → modulate features**
@@ -1743,11 +1899,13 @@ This appendix provides context on Adaptive Layer Normalization (AdaLN) and its a
 **Breakthrough**: First to popularize AdaLN in transformer-based diffusion models
 
 **Architecture**:
+
 - Replaces U-Net with transformer operating on latent patches
 - Each block uses **AdaLN-Zero** for conditioning
 - Conditions on timestep and class labels
 
 **AdaLN-Zero Innovation**:
+
 ```python
 # Initialize modulation weights to ZERO
 nn.init.constant_(adaLN_modulation[-1].weight, 0)
@@ -1757,6 +1915,7 @@ nn.init.constant_(adaLN_modulation[-1].weight, 0)
 ```
 
 **Conditioning Comparison** (from DiT paper):
+
 | Method | FID ↓ | Gflops |
 |--------|-------|--------|
 | Cross-Attention | 19.5 | 119 |
@@ -1764,12 +1923,14 @@ nn.init.constant_(adaLN_modulation[-1].weight, 0)
 | **AdaLN-Zero** | **18.5** | **118** |
 
 **Key Findings**:
+
 - AdaLN-Zero achieves **lowest FID** (best quality)
 - Most **compute-efficient** conditioning method
 - AdaLN parameters are **10-20% of total model**
 - Scales from 450M to 7B parameters
 
 **Impact**:
+
 - Became foundation for modern diffusion transformers
 - Proved transformers can replace U-Net in diffusion models
 - Established AdaLN-Zero as standard for transformer diffusion
@@ -1781,12 +1942,14 @@ nn.init.constant_(adaLN_modulation[-1].weight, 0)
 **Architecture**: MMDiT (Multimodal Diffusion Transformer)
 
 **Key Innovation**:
+
 - **Separate transformer streams** for text and image
 - Each modality has independent weights
 - **Joint attention** across modalities
 - AdaLN-Zero for both streams
 
 **AdaLN Implementation**:
+
 ```python
 # Text stream
 text_features = adaLN_modulate(text_features, condition_text + timestep)
@@ -1799,16 +1962,19 @@ output = cross_modal_attention(text_features, image_features)
 ```
 
 **Scale**:
+
 - Models: 450M to **8 billion parameters**
 - Blocks: 15 to 38 transformer blocks
 - Resolution: Up to 2048×2048 efficiently
 
 **Performance**:
+
 - **72% quality improvement** over SD 2.1
 - Better text understanding and spelling
 - Superior composition and typography
 
 **Why AdaLN?**:
+
 - Enables efficient multimodal conditioning
 - Cheaper than cross-attention for timestep injection
 - Scales to billions of parameters smoothly
@@ -1822,11 +1988,13 @@ output = cross_modal_attention(text_features, image_features)
 **Technical Report**: "Video generation models as world simulators"
 
 **AdaLN Usage**:
+
 - Predicts clean video patches from noisy patches
 - Conditions on: timesteps, text prompts, video metadata
 - Uses **AdaLN-Zero with 3D RoPE** (Rotary Position Embedding)
 
 **Implementation Details**:
+
 ```python
 # Timestep → modulation parameters
 scale, shift, gate = adaLN_modulation(timestep_emb + text_emb)
@@ -1837,11 +2005,13 @@ output = video_patches + gate * transformer_block(modulated)
 ```
 
 **Key Features**:
+
 - AdaLN injected into **self-attention and FFN separately**
 - Handles variable resolution, duration, aspect ratios
 - Demonstrates scaling to long-form video (up to 1 minute)
 
 **Significance**:
+
 - Most advanced text-to-video model (as of 2024)
 - Shows AdaLN scales beyond images to **temporal data**
 - Proves adaptive conditioning works for complex 3D+time synthesis
@@ -1853,12 +2023,14 @@ output = video_patches + gate * transformer_block(modulated)
 **Innovation**: Unified architecture for both image and video
 
 **AdaLN Design**:
+
 - Extends DiT's AdaLN to temporal dimension
 - **Spatial AdaLN**: Conditions on frame-level features
 - **Temporal AdaLN**: Conditions on video-level features
 - Hierarchical conditioning strategy
 
 **Performance**:
+
 - Competitive with specialized image/video models
 - Demonstrates AdaLN's flexibility for multi-task generation
 
@@ -1869,6 +2041,7 @@ output = video_patches + gate * transformer_block(modulated)
 **Architecture**: DiT-based with video extensions
 
 **AdaLN Implementation**:
+
 ```python
 # 3D RoPE + AdaLN-Zero
 timestep_emb = timestep_embedder(t)
@@ -1879,11 +2052,13 @@ modulated = modulate(norm(spatial_temporal_emb), shift, scale)
 ```
 
 **Features**:
+
 - Open-source alternative to proprietary models
 - Uses AdaLN-Zero for stable training
 - Supports multi-resolution training
 
 **Contribution**:
+
 - Makes advanced AdaLN techniques accessible
 - Community-driven improvements to conditioning strategies
 
@@ -1892,11 +2067,13 @@ modulated = modulate(norm(spatial_temporal_emb), shift, scale)
 **Innovation**: Combines autoregressive modeling with AdaLN
 
 **Architecture**:
+
 - Next-token prediction for images
 - AdaLN conditions on previously generated tokens
 - Bridges autoregressive and diffusion approaches
 
 **Significance**:
+
 - Shows AdaLN works beyond pure diffusion models
 - Adaptive conditioning for autoregressive generation
 
@@ -1905,15 +2082,18 @@ modulated = modulate(norm(spatial_temporal_emb), shift, scale)
 #### AdaLN-Zero vs Standard AdaLN
 
 **Standard AdaLN**:
+
 - Random initialization of modulation parameters
 - Network learns scale/shift from scratch
 
 **AdaLN-Zero** (DiT innovation):
+
 - **Zero initialization** of final modulation layer
 - Network starts as identity: `f(x) = x`
 - Gradually learns optimal modulation
 
 **Advantages of AdaLN-Zero**:
+
 1. **Training stability**: No random perturbations at start
 2. **Better convergence**: Smooth learning curve
 3. **Lower FID**: Empirically better results
@@ -1922,6 +2102,7 @@ modulated = modulate(norm(spatial_temporal_emb), shift, scale)
 #### AdaGN (Adaptive Group Normalization)
 
 Used in some U-Net diffusion models:
+
 - Applies to grouped channels instead of full layer
 - Cheaper computation for convolutional architectures
 - Similar principle: condition → scale/shift → modulate
@@ -1929,9 +2110,11 @@ Used in some U-Net diffusion models:
 #### FiLM (Feature-wise Linear Modulation)
 
 Earlier technique (2018) in visual reasoning:
+
 ```python
 FiLM(x, γ, β) = γ * x + β
 ```
+
 - Simpler than AdaLN (no normalization step)
 - Used in VQA (Visual Question Answering) models
 - Inspired AdaLN's scale/shift design
@@ -1953,11 +2136,13 @@ FiLM(x, γ, β) = γ * x + β
 #### 1. Computational Efficiency
 
 **Cross-Attention** (traditional approach):
+
 - Complexity: O(sequence_length × condition_length)
 - For images: O(256 × text_tokens) per layer
 - Memory-intensive attention matrices
 
 **AdaLN**:
+
 - Complexity: O(hidden_dim²)
 - Single linear projection: `Linear(1536, 3×1536)`
 - No attention computation needed
@@ -1967,21 +2152,25 @@ FiLM(x, γ, β) = γ * x + β
 #### 2. Parameter Efficiency
 
 **Example** (VibeVoice diffusion head):
+
 - Total parameters: ~40M
 - AdaLN parameters: ~7M (4 layers × 1536 → 4608)
 - Percentage: **~18% of model**
 
 Compare to cross-attention:
+
 - Would need ~50M+ parameters for similar expressiveness
 
 #### 3. Training Stability
 
 **Zero-init training** (from DiT paper):
+
 - Loss curve is smooth from iteration 0
 - No initial spike in loss
 - Faster convergence to optimal solution
 
 **Traditional methods**:
+
 - Random initialization causes instability
 - Requires careful learning rate tuning
 - May diverge early in training
@@ -1989,6 +2178,7 @@ Compare to cross-attention:
 #### 4. Scalability
 
 **Proven scale** (Stable Diffusion 3):
+
 - 15 blocks (450M) → 38 blocks (8B)
 - AdaLN scales **linearly** with model size
 - No degradation in conditioning effectiveness
@@ -1996,12 +2186,14 @@ Compare to cross-attention:
 #### 5. Flexibility
 
 **Works across modalities**:
+
 - Images: DiT, SD3
 - Video: Sora, GenTron, Open-Sora
 - Speech: **VibeVoice**
 - Autoregressive: VAR
 
 **Handles diverse conditions**:
+
 - Timesteps (all models)
 - Class labels (DiT)
 - Text embeddings (SD3, Sora)
@@ -2012,17 +2204,21 @@ Compare to cross-attention:
 #### Mathematical Perspective
 
 **Standard normalization**:
-```
+
+```text
 y = γ * (x - μ) / σ + β
 ```
+
 - γ, β are **fixed learned parameters**
 - Same for all inputs
 
 **Adaptive normalization**:
-```
+
+```text
 γ(c), β(c) = MLP(condition)
 y = γ(c) * (x - μ) / σ + β(c)
 ```
+
 - γ, β are **functions of condition**
 - Different for each input based on context
 
@@ -2031,10 +2227,12 @@ y = γ(c) * (x - μ) / σ + β(c)
 #### Information Theory Perspective
 
 **Cross-attention**:
+
 - Information flow: Condition → Keys/Values → Attention weights → Output
 - Indirect path with multiple transformations
 
 **AdaLN**:
+
 - Information flow: Condition → Scale/Shift → Feature modulation → Output
 - **Direct path** from condition to feature statistics
 
@@ -2043,15 +2241,19 @@ y = γ(c) * (x - μ) / σ + β(c)
 #### Gradient Flow Perspective
 
 **Concatenation**:
-```
+
+```text
 ∂Loss/∂condition = ∂Loss/∂output × ∂output/∂layers × ∂layers/∂concat × ∂concat/∂condition
 ```
+
 - Gradients pass through many layers
 
 **AdaLN**:
-```
+
+```text
 ∂Loss/∂condition = ∂Loss/∂output × ∂output/∂modulation × ∂modulation/∂condition
 ```
+
 - **Shorter gradient path**
 - Faster learning of condition-to-output mapping
 
@@ -2086,6 +2288,7 @@ y = γ(c) * (x - μ) / σ + β(c)
 ### References
 
 **Foundational Papers**:
+
 1. Huang & Belongie (2017). "Arbitrary Style Transfer in Real-time with Adaptive Instance Normalization". *ICCV 2017*.
 2. Karras et al. (2018). "A Style-Based Generator Architecture for GANs". *CVPR 2019*.
 3. Peebles & Xie (2023). "Scalable Diffusion Models with Transformers". *ICCV 2023*.
