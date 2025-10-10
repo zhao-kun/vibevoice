@@ -82,6 +82,9 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.generation_config = self.generate_config_from_dict(config.__dict__)
         self.dtype = config.torch_dtype
         self.device = torch.device("cuda")
+
+        # Initialize random generator for deterministic speech generation
+        self._speech_generator = None
         # self.tie_weights()
 
     def generate_config_from_dict(self, config_dict: Dict) -> GenerationConfig:
@@ -483,6 +486,11 @@ class VibeVoiceForConditionalInference(nn.Module):
             # next_token_logits = outputs.logits[:, -1, :].to(copy=True, device=input_ids.device)
             next_token_scores = logits_processor(input_ids, next_token_logits)
 
+            # Debug: print top-5 tokens at first few steps
+            if step < 5 and verbose:
+                top5_values, top5_indices = torch.topk(next_token_scores[0], k=5)
+                print(f"Step {step} top-5 tokens: {top5_indices.tolist()}, scores: {top5_values.tolist()}")
+
             # token selection
             if generation_config.do_sample:
                 probs = nn.functional.softmax(next_token_scores, dim=-1)
@@ -693,13 +701,22 @@ class VibeVoiceForConditionalInference(nn.Module):
     def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0, step=0):
         self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
         condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
-        # Create tensor directly on target device with device-specific generator
+
+        # Initialize generator once per model instance, on the correct device
         target_device = condition.device
-        device_generator = torch.Generator(device=target_device).manual_seed(42)
-        speech = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=device_generator, device=target_device, dtype=condition.dtype)
-        # speech = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=random_generator).to(condition)
+        if self._speech_generator is None or self._speech_generator.device != target_device:
+            self._speech_generator = torch.Generator(device=target_device).manual_seed(42)
+
+        # Generate initial noise using the persistent generator
+        speech = torch.randn(
+            condition.shape[0],
+            self.config.acoustic_vae_dim,
+            generator=self._speech_generator,
+            device=target_device,
+            dtype=condition.dtype
+        )
         # try:
-        #   speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt") 
+        #   speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt")
         # except FileNotFoundError:
         #    print(f"File not found: /tmp/randpt/speech_step_{step}.pt")
 
