@@ -624,6 +624,7 @@ class VibeVoiceForConditionalInference(nn.Module):
                     positive_condition,
                     negative_condition,
                     cfg_scale=cfg_scale,
+                    step=step
                 ).unsqueeze(1)
 
                 # Decode acoustic latent to audio using acoustic streaming cache
@@ -689,10 +690,15 @@ class VibeVoiceForConditionalInference(nn.Module):
         )
 
     @torch.no_grad()
-    def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0):
+    def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0, step=0):
         self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
         condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
         speech = torch.randn(condition.shape[0], self.config.acoustic_vae_dim).to(condition)
+        try:
+           speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt") 
+        except FileNotFoundError:
+            print(f"File not found: /tmp/randpt/speech_step_{step}.pt")
+
         for t in self.model.noise_scheduler.timesteps:
             half = speech[: len(speech) // 2]
             combined = torch.cat([half, half], dim=0)
