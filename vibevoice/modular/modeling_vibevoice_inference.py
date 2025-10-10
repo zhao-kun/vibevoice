@@ -702,19 +702,11 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
         condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
 
-        # Initialize generator once per model instance, on the correct device
-        target_device = condition.device
-        if self._speech_generator is None or self._speech_generator.device != target_device:
-            self._speech_generator = torch.Generator(device=target_device).manual_seed(42)
-
-        # Generate initial noise using the persistent generator
-        speech = torch.randn(
-            condition.shape[0],
-            self.config.acoustic_vae_dim,
-            generator=self._speech_generator,
-            device=target_device,
-            dtype=condition.dtype
-        )
+        # Set deterministic seed for this specific diffusion step
+        # Using step-based seed to get different noise for each generation step
+        torch.manual_seed(42 + step)
+        temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim)
+        speech = temp.to(condition)
         # try:
         #   speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt")
         # except FileNotFoundError:
