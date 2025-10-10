@@ -10,6 +10,7 @@ from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForCondition
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
 from config.configuration_vibevoice import VibeVoiceConfig
+from util.rand_init import get_generator
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
@@ -224,13 +225,19 @@ def parse_args():
         default=1.3,
         help="CFG (Classifier-Free Guidance) scale for generation (default: 1.3)",
     )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for initialization (default: 42)",
+    )
     
     return parser.parse_args()
 
 def main():
 
     # setup_trace_torch_randn()
-
     args = parse_args()
 
     # Normalize potential 'mpx' typo to 'mps'
@@ -245,9 +252,7 @@ def main():
 
     print(f"Using device: {args.device}")
 
-    #torch.manual_seed(42)
-    #torch.cuda.manual_seed_all(42)
-
+    get_generator(args.seed)
     # Initialize voice mapper
     voice_mapper = VoiceMapper()
     

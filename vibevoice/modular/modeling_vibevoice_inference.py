@@ -16,6 +16,7 @@ from vibevoice.modular.modular_vibevoice_tokenizer import VibeVoiceTokenizerStre
 from config.configuration_vibevoice import VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
+from util.rand_init import get_generator
 
 logger = logging.get_logger(__name__)
 
@@ -702,15 +703,8 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
         condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
 
-        # Set deterministic seed for this specific diffusion step
-        # Using step-based seed to get different noise for each generation step
-        torch.manual_seed(42 + step)
-        temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim)
+        temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=get_generator())
         speech = temp.to(condition)
-        # try:
-        #   speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt")
-        # except FileNotFoundError:
-        #    print(f"File not found: /tmp/randpt/speech_step_{step}.pt")
 
         for t in self.model.noise_scheduler.timesteps:
             half = speech[: len(speech) // 2]
