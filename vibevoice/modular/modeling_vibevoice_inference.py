@@ -16,6 +16,7 @@ from vibevoice.modular.modular_vibevoice_tokenizer import VibeVoiceTokenizerStre
 from config.configuration_vibevoice import VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
+from util.rand_init import random_generator
 
 logger = logging.get_logger(__name__)
 
@@ -693,11 +694,11 @@ class VibeVoiceForConditionalInference(nn.Module):
     def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0, step=0):
         self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
         condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
-        speech = torch.randn(condition.shape[0], self.config.acoustic_vae_dim).to(condition)
-        try:
-           speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt") 
-        except FileNotFoundError:
-            print(f"File not found: /tmp/randpt/speech_step_{step}.pt")
+        speech = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=random_generator).to(condition)
+        #try:
+        #   speech = torch.load(f"/tmp/randpt/speech_step_{step}.pt") 
+        #except FileNotFoundError:
+        #    print(f"File not found: /tmp/randpt/speech_step_{step}.pt")
 
         for t in self.model.noise_scheduler.timesteps:
             half = speech[: len(speech) // 2]
