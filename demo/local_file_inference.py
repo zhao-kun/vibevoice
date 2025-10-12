@@ -320,12 +320,8 @@ def main():
     attn_implementation = "sdpa"
 
     print(f"Using device: {args.device}, torch_dtype: {load_dtype}, attn_implementation: {attn_implementation}")
-    os.path.join(args.model_path, "config.json")
-    with open(os.path.join(args.model_path, "config.json"), 'r') as f:
-        import json
-        config_dict = json.load(f)
 
-    # Prepare inputs for the model
+   # Prepare inputs for the model
     inputs = processor(
         text=[full_script], # Wrap in list for batch processing
         voice_samples=[voice_samples], # Wrap in list for batch processing
@@ -333,7 +329,17 @@ def main():
         return_tensors="pt",
         return_attention_mask=True,
     )
+    # Move tensors to target device
+    target_device = args.device if args.device != "cpu" else "cpu"
+    for k, v in inputs.items():
+        if torch.is_tensor(v):
+            inputs[k] = v.to(target_device)
 
+    os.path.join(args.model_path, "config.json")
+    with open(os.path.join(args.model_path, "config.json"), 'r') as f:
+        import json
+        config_dict = json.load(f)
+ 
     config = VibeVoiceConfig.from_dict(config_dict, 
                                        torch_dtype=load_dtype, 
                                        device_map="cuda", 
@@ -342,14 +348,8 @@ def main():
 
     # Load model with device-specific logic
     model = VibeVoiceForConditionalInference.from_pretrain(args.model_path, config)
-
     model.eval()
     model.set_ddpm_inference_steps(num_steps=10)
-    # Move tensors to target device
-    target_device = args.device if args.device != "cpu" else "cpu"
-    for k, v in inputs.items():
-        if torch.is_tensor(v):
-            inputs[k] = v.to(target_device)
 
     print(f"Starting generation with cfg_scale: {args.cfg_scale}")
 
