@@ -191,12 +191,10 @@ class VibeVoiceDiffusionHead(nn.Module):
     dtype: torch.dtype = torch.bfloat16
     device = "cuda"
 
-    def __init__(
-        self,
-        config,
-    ):
+    def __init__(self, config, dtype: torch.dtype = torch.bfloat16):
         super().__init__()
         self.config = config
+        self.dtype = dtype
         self.cond_dim = config.hidden_size
         latent_size = config.latent_size
 

@@ -64,30 +64,30 @@ class VibeVoiceProcessor:
         )
         
         # Try to load from local path first, then from HF hub
-        config_path = os.path.join(pretrained_model_name_or_path, "preprocessor_config.json")
+        config_path = pretrained_model_name_or_path
+        if pretrained_model_name_or_path and os.path.isdir(pretrained_model_name_or_path):
+            config_path = os.path.join(pretrained_model_name_or_path, "preprocessor_config.json")
         config = None
-        
-        if os.path.exists(config_path):
+        try:
             # Local path exists
             with open(config_path, 'r') as f:
                 config = json.load(f)
-        else:
-            # Try to load from HF hub
-            try:
-                config_file = cached_file(
-                    pretrained_model_name_or_path,
-                    "preprocessor_config.json",
-                    **kwargs
-                )
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not load preprocessor_config.json from {pretrained_model_name_or_path}: {e}")
-                logger.warning("Using default configuration")
-                config = {
-                    "speech_tok_compress_ratio": 3200,
-                    "db_normalize": True,
-                }
+        except Exception as e:
+            logger.warning(f"Could not load preprocessor_config file {config_path}: {e}")
+            logger.warning("Using default preprocessor configuration")
+            config = {
+                "processor_class": "VibeVoiceProcessor",
+                "speech_tok_compress_ratio": 3200,
+                "db_normalize": True,
+                "audio_processor": {
+                    "feature_extractor_type": "VibeVoiceTokenizerProcessor",
+                    "sampling_rate": 24000,
+                    "normalize_audio": True,
+                    "target_dB_FS": -25,
+                    "eps": 1e-06
+                },
+                "language_model_pretrained_name": "Qwen/Qwen2.5-7B"
+            }
         
         # Extract main processor parameters
         speech_tok_compress_ratio = config.get("speech_tok_compress_ratio", 3200)

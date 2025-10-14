@@ -1,9 +1,11 @@
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, Callable, Any
-from tqdm import tqdm
+import os
 import torch
 import torch.nn as nn
 import inspect
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Union, Callable, Any
+from tqdm import tqdm
 
 from transformers.generation import GenerationConfig, LogitsProcessor, LogitsProcessorList, StoppingCriteriaList
 from transformers.modeling_outputs import BaseModelOutputWithPast, ModelOutput
@@ -811,13 +813,23 @@ class VibeVoiceForConditionalInference(nn.Module):
     @classmethod
     def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda"):
         """Load model from pretrained weights."""
+        from util.safetensors_util import MultipleSafetensorLoader, MemoryEfficientSafeOpen
+
         model = cls(config)
-        from util.safetensors_util import MultipleSafetensorLoader
-        import os
-        state_dict = MultipleSafetensorLoader(os.path.join(model_path, "model.safetensors.index.json")).load_dict()
+        state_dict = {}
+        if os.path.isdir(model_path):
+            print(f"Begin to load model from model path {model_path}")
+            state_dict = MultipleSafetensorLoader(os.path.join(model_path, "model.safetensors.index.json")).load_dict()
+        else:
+            print(f"Begin to load model from mono model file {model_path}")
+            with MemoryEfficientSafeOpen(model_path) as safe:
+                for key in safe.keys():
+                    state_dict[key] = safe.get_tensor(key)
         model.load_state_dict(state_dict, strict=False)
         model.to(device)
+        print("Model loaded")
         return model
+            
 
     def _prepare_model_inputs(
         self,

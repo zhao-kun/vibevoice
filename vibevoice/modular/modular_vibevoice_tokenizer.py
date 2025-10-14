@@ -994,9 +994,10 @@ class VibeVoiceAcousticTokenizerModel(nn.Module):
     dtype: torch.dtype = torch.bfloat16
     device = "cuda"
 
-    def __init__(self, config):
+    def __init__(self, config, dtype: torch.dtype = torch.bfloat16):
         super().__init__()
         self.config = config
+        self.dtype = dtype
 
         self.register_buffer('fix_std', torch.tensor(config.fix_std), persistent=False)
         self.std_dist_type = getattr(config, "std_dist_type", "fix")
@@ -1111,10 +1112,11 @@ class VibeVoiceSemanticTokenizerModel(nn.Module):
     dtype: torch.dtype = torch.bfloat16
     device = "cuda"
 
-    def __init__(self, config):
+    def __init__(self, config, dtype: torch.dtype = torch.bfloat16):
         super().__init__()
 
         self.config = config
+        self.dtype = dtype
 
         # Parse encoder depths
         if isinstance(config.encoder_depths, str):

@@ -51,11 +51,12 @@ class VibeVoiceGenerationOutput(ModelOutput):
 
 
 class SpeechConnector(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, input_dim, output_dim, dtype: torch.dtype = torch.bfloat16):
         super().__init__()
         self.fc1 = nn.Linear(input_dim, output_dim)
         self.norm = LlamaRMSNorm(output_dim, eps=1e-6)
         self.fc2 = nn.Linear(output_dim, output_dim)
+        self.dtype = dtype
 
     def forward(self, features, **kwargs):
         x = self.fc1(features)
@@ -113,24 +114,26 @@ class VibeVoiceModel(VibeVoicePreTrainedModel):
         else:
             dtype = torch.float32
 
+        self.dtype = dtype
+
         # Initialize Qwen2 model for language modeling
         lm_config = config.decoder_config
         lm_config = QwenConfig.from_config(lm_config)
-        self.language_model = QwenModel(lm_config)
+        self.language_model = QwenModel(lm_config, dtype=dtype)
 
         # Initialize speech components if needed
-        self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config).to(dtype)
-        self.semantic_tokenizer = VibeVoiceSemanticTokenizerModel(config.semantic_tokenizer_config).to(dtype)
+        self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config, dtype=dtype).to(dtype)
+        self.semantic_tokenizer = VibeVoiceSemanticTokenizerModel(config.semantic_tokenizer_config, dtype=dtype).to(dtype)
 
-        self.acoustic_connector = SpeechConnector(config.acoustic_vae_dim, lm_config.hidden_size).to(dtype)
-        self.semantic_connector = SpeechConnector(config.semantic_vae_dim, lm_config.hidden_size).to(dtype)
+        self.acoustic_connector = SpeechConnector(config.acoustic_vae_dim, lm_config.hidden_size, dtype=dtype).to(dtype)
+        self.semantic_connector = SpeechConnector(config.semantic_vae_dim, lm_config.hidden_size, dtype=dtype).to(dtype)
 
         # Register scaling factors as buffers - use 1D tensors for FSDP compatibility
         self.register_buffer('speech_scaling_factor', torch.tensor(float('nan')))
         self.register_buffer('speech_bias_factor', torch.tensor(float('nan')))
 
         # Initialize prediction head for speech generation
-        self.prediction_head = VibeVoiceDiffusionHead(config.diffusion_head_config).to(dtype)
+        self.prediction_head = VibeVoiceDiffusionHead(config.diffusion_head_config, dtype=dtype).to(dtype)
 
         # Initialize noise scheduler
         self.noise_scheduler = DPMSolverMultistepScheduler(
