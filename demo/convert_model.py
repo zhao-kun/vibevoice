@@ -50,6 +50,7 @@ def main():
     else:
         target_dtype = torch.bfloat16
         save_model_name = args.converted_model_name + "_bf16.safetensors"
+    
 
     model.to(dtype=target_dtype)
     print(f"Model converted with dtype {args.type}")

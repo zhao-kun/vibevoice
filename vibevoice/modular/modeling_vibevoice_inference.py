@@ -19,6 +19,7 @@ from config.configuration_vibevoice import VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
 from util.rand_init import get_generator
+from accelerate import init_empty_weights
 
 logger = logging.get_logger(__name__)
 
@@ -814,8 +815,8 @@ class VibeVoiceForConditionalInference(nn.Module):
     def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda"):
         """Load model from pretrained weights."""
         from util.safetensors_util import MultipleSafetensorLoader, MemoryEfficientSafeOpen
-
-        model = cls(config)
+        with init_empty_weights():
+            model = cls(config)
         state_dict = {}
         if os.path.isdir(model_path):
             print(f"Begin to load model from model path {model_path}")
@@ -824,9 +825,11 @@ class VibeVoiceForConditionalInference(nn.Module):
             print(f"Begin to load model from mono model file {model_path}")
             with MemoryEfficientSafeOpen(model_path) as safe:
                 for key in safe.keys():
-                    state_dict[key] = safe.get_tensor(key)
-        model.load_state_dict(state_dict, strict=False)
-        model.to(device)
+                    state_dict[key] = safe.get_tensor(key).to(device)
+        model.load_state_dict(state_dict, strict=False, assign=True)
+        #model.to(device)
+    
+        # Use to_empty() instead of to() when moving from meta tensors
         print("Model loaded")
         return model
             
