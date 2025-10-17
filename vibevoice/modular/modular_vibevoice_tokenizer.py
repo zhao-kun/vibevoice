@@ -13,6 +13,8 @@ import torch.nn.functional as F
 from transformers.utils import logging
 from transformers.activations import ACT2FN
 
+from util.float8_scale import AutoCast
+
 logger = logging.get_logger(__name__)
 
 
@@ -57,7 +59,10 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         output = self._norm(x.float()).type_as(x)
         if self.weight is not None:
-            output = output * self.weight
+            weight = self.weight
+            if weight.dtype == torch.float8_e4m3fn:
+                weight = self.weight.to(torch.bfloat16)
+            output = output * weight
         return output
 
     def extra_repr(self) -> str:
@@ -72,7 +77,10 @@ class ConvRMSNorm(RMSNorm):
         # Fallback to native implementation
         output = self._norm(x.float()).type_as(x)
         if self.weight is not None:
-            output = output * self.weight
+            weight = self.weight
+            if weight.dtype == torch.float8_e4m3fn:
+                weight = self.weight.to(torch.bfloat16)
+            output = output * weight
         output = output.transpose(1, 2)  # b t ... -> b ... t
         return output
 
@@ -105,7 +113,7 @@ def get_norm_module(module: nn.Module, causal: bool = False, norm: str = 'none',
         if causal:
             raise ValueError("GroupNorm doesn't support causal evaluation.")
         assert isinstance(module, nn.modules.conv._ConvNd)
-        return nn.GroupNorm(1, module.out_channels, **norm_kwargs)
+        return AutoCast.GroupNorm(1, module.out_channels, **norm_kwargs)
     else:
         return nn.Identity()
 
@@ -150,7 +158,7 @@ class NormConv1d(nn.Module):
     def __init__(self, *args, causal: bool = False, norm: str = 'none',
                  norm_kwargs: tp.Dict[str, tp.Any] = {}, **kwargs):
         super().__init__()
-        self.conv = apply_parametrization_norm(nn.Conv1d(*args, **kwargs), norm)
+        self.conv = apply_parametrization_norm(AutoCast.Conv1d(*args, **kwargs), norm)
         self.norm = get_norm_module(self.conv, causal, norm, **norm_kwargs)
         self.norm_type = norm
 
@@ -164,7 +172,7 @@ class NormConvTranspose1d(nn.Module):
     def __init__(self, *args, causal: bool = False, norm: str = 'none',
                  norm_kwargs: tp.Dict[str, tp.Any] = {}, **kwargs):
         super().__init__()
-        self.convtr = apply_parametrization_norm(nn.ConvTranspose1d(*args, **kwargs), norm)
+        self.convtr = apply_parametrization_norm(AutoCast.ConvTranspose1d(*args, **kwargs), norm)
         self.norm = get_norm_module(self.convtr, causal, norm, **norm_kwargs)
         self.norm_type = norm
 
@@ -565,9 +573,9 @@ class FFN(nn.Module):
                  bias=False):
         super().__init__()
         self.embed_dim = embed_dim
-        self.linear1 = nn.Linear(self.embed_dim, ffn_dim, bias=bias)
+        self.linear1 = AutoCast.Linear(self.embed_dim, ffn_dim, bias=bias)
         self.gelu = ACT2FN["gelu"]
-        self.linear2 = nn.Linear(ffn_dim, self.embed_dim, bias=bias)
+        self.linear2 = AutoCast.Linear(ffn_dim, self.embed_dim, bias=bias)
 
     def forward(self, x):
         x = self.linear1(x)
@@ -642,7 +650,10 @@ class Block1D(nn.Module):
         x = self.norm(x)
         x = self.mixer(x)
         if self.gamma is not None:
-            x = x * self.gamma.unsqueeze(-1)
+            gamma = self.gamma
+            if gamma.dtype == torch.float8_e4m3fn:
+                gamma = self.gamma.to(torch.bfloat16)
+            x = x * gamma.unsqueeze(-1)
         x = residual + self.drop_path(x)
 
         # ffn
@@ -652,7 +663,10 @@ class Block1D(nn.Module):
         x = self.ffn(x)
         x = x.permute(0, 2, 1)
         if self.ffn_gamma is not None:
-            x = x * self.ffn_gamma.unsqueeze(-1)
+            ffn_gamma = self.ffn_gamma
+            if ffn_gamma.dtype == torch.float8_e4m3fn:
+                ffn_gamma = self.ffn_gamma.to(torch.bfloat16)
+            x = x * ffn_gamma.unsqueeze(-1)
         x = residual + self.drop_path(x)
 
         return x
@@ -769,7 +783,10 @@ class TokenizerEncoder(nn.Module):
                     x = block.norm(x)
                     x = block.mixer.conv(x, cache=cache, sample_indices=sample_indices, use_cache=use_cache, debug=debug)
                     if block.gamma is not None:
-                        x = x * block.gamma.unsqueeze(-1)
+                        gamma = block.gamma
+                        if gamma.dtype == torch.float8_e4m3fn:
+                            gamma = block.gamma.to(torch.bfloat16)
+                        x = x * gamma.unsqueeze(-1)
                     x = residual + x
 
                     # FFN part
@@ -779,7 +796,10 @@ class TokenizerEncoder(nn.Module):
                     x = block.ffn(x)
                     x = x.permute(0, 2, 1)
                     if block.ffn_gamma is not None:
-                        x = x * block.ffn_gamma.unsqueeze(-1)
+                        ffn_gamma = block.ffn_gamma
+                        if ffn_gamma.dtype == torch.float8_e4m3fn:
+                            ffn_gamma = block.ffn_gamma.to(torch.bfloat16)
+                        x = x * ffn_gamma.unsqueeze(-1)
                     x = residual + x
                 else:
                     x = block(x)
@@ -914,7 +934,10 @@ class TokenizerDecoder(nn.Module):
                     x = block.norm(x)
                     x = block.mixer.conv(x, cache=cache, sample_indices=sample_indices, use_cache=use_cache, debug=debug)
                     if block.gamma is not None:
-                        x = x * block.gamma.unsqueeze(-1)
+                        gamma = block.gamma
+                        if gamma.dtype == torch.float8_e4m3fn:
+                            gamma = block.gamma.to(torch.bfloat16)
+                        x = x * gamma.unsqueeze(-1)
                     x = residual + x
 
                     # FFN part
@@ -924,7 +947,10 @@ class TokenizerDecoder(nn.Module):
                     x = block.ffn(x)
                     x = x.permute(0, 2, 1)
                     if block.ffn_gamma is not None:
-                        x = x * block.ffn_gamma.unsqueeze(-1)
+                        ffn_gamma = block.ffn_gamma
+                        if ffn_gamma.dtype == torch.float8_e4m3fn:
+                            ffn_gamma = block.ffn_gamma.to(torch.bfloat16)
+                        x = x * ffn_gamma.unsqueeze(-1)
                     x = residual + x
                 else:
                     x = block(x)
