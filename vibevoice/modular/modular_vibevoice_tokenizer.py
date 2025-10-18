@@ -986,11 +986,17 @@ class VibeVoiceTokenizerEncoderOutput:
             `torch.FloatTensor` (optional): Standard deviation used (only when dist_type='gaussian').
         """
         if dist_type == 'fix':
-            x = self.mean + self.std * torch.randn_like(self.mean)
-            return x, self.std
+            std = self.std
+            if std.dtype == torch.float8_e4m3fn:
+                std = std.to(torch.bfloat16)
+            x = self.mean + std * torch.randn_like(self.mean)
+            return x, std
         elif dist_type == 'gaussian':
             batch_size = self.mean.size(0)
-            value = self.std / 0.8
+            std = self.std
+            if std.dtype == torch.float8_e4m3fn:
+                std = std.to(torch.bfloat16)
+            value = std / 0.8
             std = torch.randn(batch_size, device=self.mean.device, dtype=self.mean.dtype) * value
 
             while std.dim() < self.mean.dim():

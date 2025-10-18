@@ -51,8 +51,8 @@ class AutoCast:
                 w, bias = cast_bias_weight(self, input, dtype=dtype, bias_dtype=input_dtype)
                 w = w.t()
 
-                scale_weight = self.scale_weight
-                scale_input = self.scale_input
+                scale_weight = self.scale_weight if hasattr(self, 'scale_weight') else None
+                scale_input = self.scale_input if hasattr(self, 'scale_input') else None
                 if scale_weight is None:
                     scale_weight = torch.ones((), device=input.device, dtype=torch.float32)
                 else:
@@ -163,7 +163,7 @@ class AutoCast:
                 weight, bias = cast_bias_weight(self, input)
             else:
                 weight = None
-            return super().forward(input, weight, self.eps)  # TODO: switch to commented out line when old torch is deprecated
+            return super().forward(input, weight)  # TODO: switch to commented out line when old torch is deprecated
             # return torch.nn.functional.rms_norm(input, self.normalized_shape, weight, self.eps)
 
         def forward(self, *args, **kwargs):
@@ -220,9 +220,7 @@ class AutoCast:
             return None
 
         def forward_comfy_cast_weights(self, input, out_dtype=None):
-            output_dtype = out_dtype
-            if self.weight.dtype == torch.float16 or self.weight.dtype == torch.bfloat16:
-                out_dtype = None
+            output_dtype = torch.bfloat16
             weight, bias = cast_bias_weight(self, device=input.device, dtype=out_dtype)
             return torch.nn.functional.embedding(input, weight, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse).to(dtype=output_dtype)
 
