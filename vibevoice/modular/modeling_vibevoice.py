@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from transformers.modeling_outputs import BaseModelOutputWithPast, ModelOutput
-from transformers import modeling_utils
 from transformers.utils import logging
 
 
@@ -21,8 +20,6 @@ from util.float8_scale import AutoCast
 
 logger = logging.get_logger(__name__)
 
-if not hasattr(modeling_utils, "ALL_PARALLEL_STYLES") or modeling_utils.ALL_PARALLEL_STYLES is None:
-    modeling_utils.ALL_PARALLEL_STYLES = ["tp", "none", "colwise", "rowwise"]
 
 @dataclass
 class VibeVoiceCausalLMOutputWithPast(ModelOutput):

@@ -53,8 +53,8 @@ class TimestepEmbedder(nn.Module):
         super().__init__()
         self.mlp = nn.Sequential(
             AutoCast.Linear(frequency_embedding_size, hidden_size, bias=False),
-            # nn.SiLU(),
-            ACT2FN['silu'],
+            nn.SiLU(),
+            # ACT2FN['silu'],
             AutoCast.Linear(hidden_size, hidden_size, bias=False),
         )
         self.frequency_embedding_size = frequency_embedding_size
