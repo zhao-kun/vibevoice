@@ -74,9 +74,9 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         # LM head for text generation
         self.lm_head = AutoCast.Linear(config.decoder_config.hidden_size,
-                                 config.decoder_config.vocab_size,
-                                 bias=False,
-                                 dtype=config.torch_dtype)
+                                       config.decoder_config.vocab_size,
+                                       bias=False,
+                                       dtype=config.torch_dtype)
 
         # inference configuration
         self.ddpm_inference_steps = config.diffusion_head_config.ddpm_num_inference_steps
@@ -828,12 +828,11 @@ class VibeVoiceForConditionalInference(nn.Module):
                 for key in safe.keys():
                     state_dict[key] = safe.get_tensor(key).to(device)
         model.load_state_dict(state_dict, strict=False, assign=True)
-        #model.to(device)
-    
+        # model.to(device)
+
         # Use to_empty() instead of to() when moving from meta tensors
         print("Model loaded")
         return model
-            
 
     def _prepare_model_inputs(
         self,

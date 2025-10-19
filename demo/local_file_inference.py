@@ -9,59 +9,13 @@ import torch
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalInference
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
-from config.configuration_vibevoice import VibeVoiceConfig
+from config.configuration_vibevoice import VibeVoiceConfig, DEFAULT_CONFIG
 from util.rand_init import get_generator
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
-def is_debug_mode():
-    import sys
-    has_trace = hasattr(sys, 'gettrace') and sys.gettrace() is not None
-    has_breakpoint_hook = sys.breakpointhook.__module__ != "sys"
-    return has_trace or has_breakpoint_hook
 
-def setup_trace_torch_randn():
-    if not is_debug_mode():
-        return
-
-    import traceback
-    _orig_randn = torch.randn
-    _orig_randn_like = torch.randn_like
-    _orig_rand = torch.rand
-    _orig_randint = torch.randint
-    _orig_randint_like = torch.randint_like
-
-    def debug_rand(*args, **kwargs):
-        print("torch.rand called with:", args, kwargs)
-        traceback.print_stack(limit=5)
-        return _orig_rand(*args, **kwargs)
-
-    def debug_randn(*args, **kwargs):
-        print("torch.randn called with:", args, kwargs)
-        traceback.print_stack(limit=5)
-        return _orig_randn(*args, **kwargs)
-
-    def debug_randint(*args, **kwargs):
-        print("torch.randint called with:", args, kwargs)
-        traceback.print_stack(limit=5)
-        return _orig_randint(*args, **kwargs)
-
-    def debug_rand_like(*args, **kwargs):
-        print("torch.rand_like called with:", args, kwargs)
-        traceback.print_stack(limit=5)
-        return _orig_randn_like(*args, **kwargs)
-
-    def debug_randint_like(*args, **kwargs):
-        print("torch.randint_like called with:", args, kwargs)
-        traceback.print_stack(limit=5)
-        return _orig_randint_like(*args, **kwargs)
-
-    torch.randn = debug_randn
-    torch.randint = debug_randint
-    torch.randn_like = debug_rand_like
-    torch.randint_like = debug_randint_like
-    torch.rand = debug_rand
 
 class VoiceMapper:
     """Maps speaker names to voice file paths"""
@@ -188,9 +142,16 @@ def parse_txt_script(txt_content: str) -> Tuple[List[str], List[str]]:
 def parse_args():
     parser = argparse.ArgumentParser(description="VibeVoice Processor TXT Input Test")
     parser.add_argument(
-        "--model_path",
+        "--model_file",
         type=str,
-        default="./models/vibevoice",
+        default="./models/converted/vibvoice7b_bf16.safetensors",
+        help="Path to the HuggingFace model directory",
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="./models/converted/config.json",
         help="Path to the HuggingFace model directory",
     )
     
@@ -219,6 +180,14 @@ def parse_args():
         default=("cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")),
         help="Device for inference: cuda | mps | cpu",
     )
+
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="bfloat16",
+        help="Data type of weights (model file), default is bfloat16"
+    )
+
     parser.add_argument(
         "--cfg_scale",
         type=float,
@@ -234,6 +203,29 @@ def parse_args():
     )
     
     return parser.parse_args()
+
+def load_model(model_file: str = None, 
+               config: str = None,
+               dtype: torch.dtype = torch.bfloat16,
+               attn_implementation: str = "sdpa"):
+
+    config_dict = {} 
+    if config:
+        with open(config, 'r') as f:
+            import json
+            config_dict = json.load(f)
+    else:
+        # Use default configuration
+        print(f"Using default configuration: {DEFAULT_CONFIG}")
+        config_dict = DEFAULT_CONFIG 
+
+    config = VibeVoiceConfig.from_dict(config_dict, 
+                                       torch_dtype=dtype, 
+                                       device_map="cuda", 
+                                       attn_implementation=attn_implementation)
+    # Load model with device-specific logic
+    model = VibeVoiceForConditionalInference.from_pretrain(model_file, config)
+    return model
 
 def main():
 
@@ -312,16 +304,9 @@ def main():
     full_script = '\n'.join(scripts)
     full_script = full_script.replace("’", "'")        
     
-    print(f"Loading processor & model from {args.model_path}")
-    processor = VibeVoiceProcessor.from_pretrained(args.model_path)
-
-    # Decide dtype & attention implementation
-    load_dtype = torch.bfloat16
-    attn_implementation = "sdpa"
-
-    print(f"Using device: {args.device}, torch_dtype: {load_dtype}, attn_implementation: {attn_implementation}")
-
-   # Prepare inputs for the model
+    print(f"Loading processor & model from {args.model_file}")
+    processor = VibeVoiceProcessor.from_pretrained(None) # use default configuration
+    # Prepare inputs for the model
     inputs = processor(
         text=[full_script], # Wrap in list for batch processing
         voice_samples=[voice_samples], # Wrap in list for batch processing
@@ -335,19 +320,14 @@ def main():
         if torch.is_tensor(v):
             inputs[k] = v.to(target_device)
 
-    os.path.join(args.model_path, "config.json")
-    with open(os.path.join(args.model_path, "config.json"), 'r') as f:
-        import json
-        config_dict = json.load(f)
- 
-    config = VibeVoiceConfig.from_dict(config_dict, 
-                                       torch_dtype=load_dtype, 
-                                       device_map="cuda", 
-                                       attn_implementation=attn_implementation)
+    # Decide dtype & attention implementation
+    load_dtype = torch.bfloat16 
+    if args.dtype == "float8_e4m3fn":
+        load_dtype = torch.float8_e4m3fn
+    attn_implementation = "sdpa"
 
-
-    # Load model with device-specific logic
-    model = VibeVoiceForConditionalInference.from_pretrain(args.model_path, config)
+    print(f"Using device: {args.device}, torch_dtype: {load_dtype}, attn_implementation: {attn_implementation}")
+    model = load_model(model_file = args.model_file, config = args.config, dtype=load_dtype, attn_implementation=attn_implementation)
     model.eval()
     model.set_ddpm_inference_steps(num_steps=10)
 
