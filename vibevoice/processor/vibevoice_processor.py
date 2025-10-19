@@ -10,8 +10,10 @@ import torch
 from transformers.tokenization_utils_base import BatchEncoding, PaddingStrategy, PreTokenizedInput, TextInput, TruncationStrategy
 from transformers.utils import TensorType, logging
 from .vibevoice_tokenizer_processor import AudioNormalizer
+from util import vibevoice_root_dir
 
 logger = logging.get_logger(__name__)
+
 
 
 class VibeVoiceProcessor:
@@ -96,13 +98,12 @@ class VibeVoiceProcessor:
         # Load tokenizer - try from model path first, then fallback to Qwen        
         language_model_pretrained_name = config.get("language_model_pretrained_name", None) or kwargs.pop("language_model_pretrained_name", "Qwen/Qwen2.5-1.5B")
         logger.info(f"Loading tokenizer from {language_model_pretrained_name}")
-        if 'qwen' in language_model_pretrained_name.lower():
-            tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
-                language_model_pretrained_name,
-                **kwargs
-            )
-        else:
-            raise ValueError(f"Unsupported tokenizer type for {language_model_pretrained_name}. Supported types: Qwen, Llama, Gemma.")
+        # Load Qwen/Qwen2.5-7B tokenizers from local directory
+        tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
+            os.path.join(vibevoice_root_dir, "tokenizer"),
+            local_files_only=True,
+            **kwargs
+        )
         
         # Load audio processor
         if "audio_processor" in config:

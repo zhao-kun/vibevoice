@@ -322,9 +322,7 @@ def main():
 
     # Decide dtype & attention implementation
     load_dtype = torch.bfloat16 
-    if args.dtype == "float8_e5m2":
-        load_dtype = torch.float8_e5m2
-    elif args.dtype == "float8_e4m3fn":
+    if args.dtype == "float8_e4m3fn":
         load_dtype = torch.float8_e4m3fn
     attn_implementation = "sdpa"
 

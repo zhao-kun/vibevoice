@@ -8,6 +8,9 @@ from transformers.modeling_outputs import BaseModelOutputWithPast
 from config.configuration_vibevoice import QwenConfig
 from functools import wraps
 
+from util.vibevoice_norm import QwenRMSNorm
+from util.float8_scale import AutoCast
+
 logger = logging.get_logger(__name__)
 
 
@@ -113,25 +116,6 @@ def default_rope_parameters(
     # Compute the inverse frequencies
     inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float) / dim))
     return inv_freq, attention_factor
-
-class QwenRMSNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-6):
-        """
-        MistralRMSNorm is equivalent to T5LayerNorm
-        """
-        super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states):
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.to(torch.float32)
-        variance = hidden_states.pow(2).mean(-1, keepdim=True)
-        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return self.weight * hidden_states.to(input_dtype)
-
-    def extra_repr(self):
-        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
 def rotate_half(x):
     """Rotates half the hidden dims of the input."""
@@ -289,9 +273,9 @@ class Qwen2MLP(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
         self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
+        self.gate_proj = AutoCast.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.up_proj = AutoCast.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = AutoCast.Linear(self.intermediate_size, self.hidden_size, bias=False)
         self.act_fn = nn.SiLU()
 
     def forward(self, x):
@@ -309,10 +293,10 @@ class Qwen2Attention(nn.Module):
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
         self.is_causal = True
-        self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=True)
-        self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
-        self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
-        self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
+        self.q_proj = AutoCast.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=True)
+        self.k_proj = AutoCast.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
+        self.v_proj = AutoCast.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=True)
+        self.o_proj = AutoCast.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
         self.sliding_window = None
 
     def forward(
@@ -369,8 +353,8 @@ class QwenDecoderLayer(nn.Module):
         self.self_attn = Qwen2Attention(config=config, layer_idx=layer_idx)
         self.mlp = Qwen2MLP(config)
 
-        self.input_layernorm = QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_attention_layernorm = QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.input_layernorm = AutoCast.QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = AutoCast.QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
 
     def forward(
@@ -425,11 +409,11 @@ class QwenModel(nn.Module):
         self.vocab_size = config.vocab_size
         self.dtype = dtype
 
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx).to(dtype)
+        self.embed_tokens = AutoCast.Embedding(config.vocab_size, config.hidden_size, self.padding_idx).to(dtype)
         self.layers = nn.ModuleList(
             [QwenDecoderLayer(config, layer_idx).to(dtype) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps).to(dtype)
+        self.norm = AutoCast.QwenRMSNorm(config.hidden_size, eps=config.rms_norm_eps).to(dtype)
         # DO NOT change rotary embedding dtype, 
         self.rotary_emb = QwenRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
@@ -515,7 +499,7 @@ class Qwen2ForCausalLM(nn.Module):
         super().__init__()
         self.model = QwenModel(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = AutoCast.Linear(config.hidden_size, config.vocab_size, bias=False)
         self.lm_head.weight = self.model.embed_tokens.weight
 
     @torch.no_grad()

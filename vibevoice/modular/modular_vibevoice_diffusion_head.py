@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from transformers.activations import ACT2FN
 from transformers.utils import logging
+from util.float8_scale import AutoCast
 
 logger = logging.get_logger(__name__)
 
@@ -26,7 +27,10 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         output = self._norm(x.float()).type_as(x)
         if self.weight is not None:
-            output = output * self.weight
+            weight = self.weight
+            if weight.dtype == torch.float8_e4m3fn:
+                weight = self.weight.to(torch.bfloat16)
+            output = output * weight
         return output
 
     def extra_repr(self) -> str:
@@ -48,10 +52,10 @@ class TimestepEmbedder(nn.Module):
     def __init__(self, hidden_size, frequency_embedding_size=256):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(frequency_embedding_size, hidden_size, bias=False),
+            AutoCast.Linear(frequency_embedding_size, hidden_size, bias=False),
             # nn.SiLU(),
             ACT2FN['silu'],
-            nn.Linear(hidden_size, hidden_size, bias=False),
+            AutoCast.Linear(hidden_size, hidden_size, bias=False),
         )
         self.frequency_embedding_size = frequency_embedding_size
 
@@ -80,7 +84,7 @@ class TimestepEmbedder(nn.Module):
         return embedding.to(t.dtype)
 
     def forward(self, t):
-        t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
+        t_freq = TimestepEmbedder.timestep_embedding(t, self.frequency_embedding_size)
         t_emb = self.mlp(t_freq)
         return t_emb
 
@@ -100,9 +104,9 @@ class FeedForwardNetwork(nn.Module):
     ):
         super().__init__()
         self.embed_dim = embed_dim
-        self.gate_proj = nn.Linear(self.embed_dim, ffn_dim, bias=False)
-        self.up_proj = nn.Linear(self.embed_dim, ffn_dim, bias=False)
-        self.down_proj = nn.Linear(ffn_dim, self.embed_dim, bias=False)
+        self.gate_proj = AutoCast.Linear(self.embed_dim, ffn_dim, bias=False)
+        self.up_proj = AutoCast.Linear(self.embed_dim, ffn_dim, bias=False)
+        self.down_proj = AutoCast.Linear(ffn_dim, self.embed_dim, bias=False)
         self.act_fn = ACT2FN['silu']  # Using SiLU as the activation function
 
     def forward(self, x):
@@ -143,7 +147,7 @@ class HeadLayer(nn.Module):
         self.adaLN_modulation = nn.Sequential(
             # nn.SiLU(),
             ACT2FN['silu'],
-            nn.Linear(cond_dim, 3 * self.embed_dim, bias=False)
+            AutoCast.Linear(cond_dim, 3 * self.embed_dim, bias=False)
         )
 
     def forward(self, x, c):
@@ -164,11 +168,11 @@ class FinalLayer(nn.Module):
     def __init__(self, hidden_size, output_size, cond_size, norm_eps=1e-5):
         super().__init__()
         self.norm_final = RMSNorm(hidden_size, eps=norm_eps, elementwise_affine=False)
-        self.linear = nn.Linear(hidden_size, output_size, bias=False)
+        self.linear = AutoCast.Linear(hidden_size, output_size, bias=False)
         self.adaLN_modulation = nn.Sequential(
             # nn.SiLU(),
             ACT2FN['silu'],
-            nn.Linear(cond_size, 2 * hidden_size, bias=False)
+            AutoCast.Linear(cond_size, 2 * hidden_size, bias=False)
         )
 
     def forward(self, x, c):
@@ -198,8 +202,8 @@ class VibeVoiceDiffusionHead(nn.Module):
         self.cond_dim = config.hidden_size
         latent_size = config.latent_size
 
-        self.noisy_images_proj = nn.Linear(latent_size, config.hidden_size, bias=False)
-        self.cond_proj = nn.Linear(config.hidden_size, self.cond_dim, bias=False)
+        self.noisy_images_proj = AutoCast.Linear(latent_size, config.hidden_size, bias=False)
+        self.cond_proj = AutoCast.Linear(config.hidden_size, self.cond_dim, bias=False)
         self.t_embedder = TimestepEmbedder(self.cond_dim)
 
         ffn_dim = int(config.hidden_size * config.head_ffn_ratio)

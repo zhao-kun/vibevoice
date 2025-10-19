@@ -12,7 +12,7 @@ from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForCondition
 def parse_args():
     parser = argparse.ArgumentParser(description="VibeVoice Model Convert and Save")
     parser.add_argument("--model_path", type=str, required=True , help="Original model path, must 7B (large) version")
-    parser.add_argument("--type", type=str, default="bfloat16", help="Data type for the new convert model, could be bfloat16 or torch.float8_e4m3fn")
+    parser.add_argument("--type", type=str, default="bfloat16", help="Data type for the new convert model, could be bfloat16 or float8_e4m3fn")
     parser.add_argument("--converted_model_name", type=str, default="./vibvoice7b", help="Path to the converted model file")
     args = parser.parse_args()
     return args
@@ -44,9 +44,6 @@ def main():
     if args.type == "float8_e4m3fn":
         target_dtype = torch.float8_e4m3fn
         save_model_name = args.converted_model_name + "_float8_e4m3fn.safetensors"
-    elif args.type == "float8_e5m2":
-        target_dtype = torch.float8_e5m2
-        save_model_name = args.converted_model_name + "_float8_e5m2.safetensors"
     else:
         target_dtype = torch.bfloat16
         save_model_name = args.converted_model_name + "_bf16.safetensors"

@@ -6,7 +6,6 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from transformers.modeling_outputs import BaseModelOutputWithPast, ModelOutput
-from transformers.models.llama.modeling_llama import LlamaRMSNorm
 from transformers import modeling_utils
 from transformers.utils import logging
 
@@ -17,6 +16,7 @@ from vibevoice.schedule.dpm_solver import DPMSolverMultistepScheduler
 
 from config.configuration_vibevoice import VibeVoiceConfig
 from .modular_vibevoice_qwen import QwenModel, QwenConfig
+from util.float8_scale import AutoCast
 
 
 logger = logging.get_logger(__name__)
@@ -33,6 +33,29 @@ class VibeVoiceCausalLMOutputWithPast(ModelOutput):
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
+
+class LlamaRMSNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        """
+        LlamaRMSNorm is equivalent to T5LayerNorm
+        """
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, hidden_states):
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        weight = self.weight
+        if weight.dtype == torch.float8_e4m3fn:
+            weight = self.weight.to(torch.bfloat16)
+        return weight * hidden_states.to(input_dtype)
+
+    def extra_repr(self):
+        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
+
 
 
 @dataclass
@@ -53,9 +76,9 @@ class VibeVoiceGenerationOutput(ModelOutput):
 class SpeechConnector(nn.Module):
     def __init__(self, input_dim, output_dim, dtype: torch.dtype = torch.bfloat16):
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, output_dim)
+        self.fc1 = AutoCast.Linear(input_dim, output_dim)
         self.norm = LlamaRMSNorm(output_dim, eps=1e-6)
-        self.fc2 = nn.Linear(output_dim, output_dim)
+        self.fc2 = AutoCast.Linear(output_dim, output_dim)
         self.dtype = dtype
 
     def forward(self, features, **kwargs):
@@ -216,7 +239,7 @@ class VibeVoiceForConditionalGeneration(VibeVoicePreTrainedModel):
         super().__init__(config)
         self.model = VibeVoiceModel(config)
         self.vocab_size = config.decoder_config.vocab_size
-        self.lm_head = nn.Linear(config.decoder_config.hidden_size, self.vocab_size, bias=False)
+        self.lm_head = AutoCast.Linear(config.decoder_config.hidden_size, self.vocab_size, bias=False)
 
         self.post_init()
 

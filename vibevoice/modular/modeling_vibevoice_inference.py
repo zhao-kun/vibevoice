@@ -19,6 +19,7 @@ from config.configuration_vibevoice import VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
 from util.rand_init import get_generator
+from util.float8_scale import AutoCast
 from accelerate import init_empty_weights
 
 logger = logging.get_logger(__name__)
@@ -72,7 +73,7 @@ class VibeVoiceForConditionalInference(nn.Module):
         self.model = VibeVoiceModel(config)
 
         # LM head for text generation
-        self.lm_head = nn.Linear(config.decoder_config.hidden_size,
+        self.lm_head = AutoCast.Linear(config.decoder_config.hidden_size,
                                  config.decoder_config.vocab_size,
                                  bias=False,
                                  dtype=config.torch_dtype)
@@ -227,7 +228,7 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         # Process speech inputs if provided
         if speech_tensors is not None and speech_masks is not None:
-            acoustic_features, speech_embeds = self._process_speech_inputs(speech_tensors.to(self.dtype), speech_masks)
+            acoustic_features, speech_embeds = self._process_speech_inputs(speech_tensors.to(torch.bfloat16), speech_masks)
             if speech_input_mask is not None:
                 inputs_embeds[speech_input_mask] = speech_embeds
 
