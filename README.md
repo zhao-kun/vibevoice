@@ -1,19 +1,19 @@
-# VibeVoice
+# VibeVoice Inference Implementation
 
-A flexible and memory-efficient implementation of VibeVoice, a speech generation model with an AR + diffusion architecture that combines text tokenization and audio processing for high-quality text-to-speech synthesis with voice cloning capabilities.
+A flexible and memory-efficient **inference implementation** based on Microsoft's VibeVoice offical implementation. 
+VibeVoice is a speech generation model with an AR + diffusion architecture that combines text tokenization and audio processing for high-quality text-to-speech synthesis with voice cloning capabilities.
 
 ## Overview
 
-VibeVoice is a state-of-the-art text-to-speech (TTS) model that generates natural-sounding speech from text while preserving distinct speaker characteristics. This implementation is based on Microsoft's original VibeVoice but has been significantly enhanced for flexibility and efficiency.
+This is an **inference-only implementation** of Microsoft's VibeVoice, a state-of-the-art text-to-speech (TTS) model that generates natural-sounding speech from text while preserving distinct speaker characteristics. This implementation focuses on efficient model loading and inference, optimized for deployment and practical usage rather than training.
 
 ### Key Features
 
-- **Multi-speaker synthesis**: Generate speech with different voice characteristics using voice cloning
-- **High-quality audio generation**: AR + diffusion architecture for natural-sounding speech
-- **Flexible model loading**: Support for both directory-based and single-file model formats
-- **Memory-efficient**: Float8 quantization support (FP8 E4M3FN) for reduced VRAM usage
-- **Framework independence**: Decoupled from HuggingFace's PreTrainedModel for greater flexibility
+- **Flexible model loading**: Support for both directory-based and single-file `.safetensors` formats
+- **Memory-efficient inference**: Float8 quantization support (FP8 E4M3FN) for reduced VRAM usage during inference
+- **Framework independence**: Decoupled from HuggingFace's PreTrainedModel for greater deployment flexibility
 - **Dynamic precision**: Automatic casting to bfloat16 during inference for optimal performance
+- **Simplified attention**: Uses PyTorch's native SDPA only (trade-off for simpler setup and better compatibility)
 
 ### Why This Fork?
 
