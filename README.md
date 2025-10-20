@@ -114,6 +114,23 @@ Pre-generated audio examples are available in the `demo/outputs/` directory to d
 | **BFloat16** | [demo/outputs/pandora_box_bf16.wav](demo/outputs/pandora_box_bf16.wav) | ~1.1MB | Full precision generation |
 | **Float8** | [demo/outputs/pandora_box_float8_e4m3fn.wav](demo/outputs/pandora_box_float8_e4m3fn.wav) | ~1.1MB | Quantized model generation |
 
+
+**Preview voice with the bfloat16 model gernerated**
+<div align="center">
+    <audio controls>
+    <source src="https://raw.githubusercontent.com/zhao-kun/vibevoice/main/demo/outputs/pandora_box_bf16.wav" type="audio/wav">
+    Your browser does not support the audio element.
+    </audio>
+</div>
+
+**Preview voice with the float8_e4m3fn model generated**
+<div align="center">
+    <audio controls>
+    <source src="https://raw.githubusercontent.com/zhao-kun/vibevoice/main/demo/outputs/pandora_box_float8_e4m3fn.wav" type="audio/wav">
+    Your browser does not support the audio element.
+    </audio>
+</div>
+
 Both examples demonstrate high-quality voice cloning with the reference voice (`zh-007_man.wav`) speaking the Pandora's Box text. The audio quality is comparable between BFloat16 and Float8 versions, showing that FP8 quantization maintains excellent generation quality while using significantly less VRAM.
 
 ### Command-line Arguments
