@@ -1,0 +1,155 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import SpeakerSelector from "@/components/SpeakerSelector";
+import DialogEditor from "@/components/DialogEditor";
+import DialogPreview from "@/components/DialogPreview";
+import SessionManager from "@/components/SessionManager";
+import { DialogLine, SpeakerInfo } from "@/types/dialog";
+import { useProject } from "@/lib/ProjectContext";
+import { useSession } from "@/lib/SessionContext";
+
+const DEFAULT_SPEAKERS: SpeakerInfo[] = [
+  { id: "1", name: "Speaker 1", displayName: "Speaker 1" },
+  { id: "2", name: "Speaker 2", displayName: "Speaker 2" },
+  { id: "3", name: "Speaker 3", displayName: "Speaker 3" },
+  { id: "4", name: "Speaker 4", displayName: "Speaker 4" },
+];
+
+export default function VoiceEditorPage() {
+  const { currentProject } = useProject();
+  const { currentSession, updateSessionDialogs } = useSession();
+  const [dialogLines, setDialogLines] = useState<DialogLine[]>([]);
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>("1");
+  const [speakers] = useState<SpeakerInfo[]>(DEFAULT_SPEAKERS);
+
+  // Load dialog lines from current session (only when session ID changes)
+  useEffect(() => {
+    if (currentSession) {
+      setDialogLines(currentSession.dialogLines);
+    } else {
+      setDialogLines([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.id]);
+
+  // Save dialog lines to current session whenever they change
+  useEffect(() => {
+    if (currentSession && dialogLines.length >= 0) {
+      // Only update if the dialog lines are different (deep comparison by length and content)
+      const isDifferent = JSON.stringify(dialogLines) !== JSON.stringify(currentSession.dialogLines);
+      if (isDifferent) {
+        updateSessionDialogs(currentSession.id, dialogLines);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogLines]);
+
+  const handleSelectSpeaker = (speakerId: string) => {
+    setSelectedSpeakerId(speakerId);
+    // Add a new dialog line for this speaker
+    const newLine: DialogLine = {
+      id: `line-${Date.now()}`,
+      speakerId,
+      content: "",
+    };
+    setDialogLines([...dialogLines, newLine]);
+  };
+
+  const handleUpdateLine = (lineId: string, content: string) => {
+    setDialogLines(
+      dialogLines.map((line) =>
+        line.id === lineId ? { ...line, content } : line
+      )
+    );
+  };
+
+  const handleDeleteLine = (lineId: string) => {
+    setDialogLines(dialogLines.filter((line) => line.id !== lineId));
+  };
+
+  const handleMoveLine = (lineId: string, direction: "up" | "down") => {
+    const index = dialogLines.findIndex((line) => line.id === lineId);
+    if (index === -1) return;
+
+    const newLines = [...dialogLines];
+    if (direction === "up" && index > 0) {
+      [newLines[index - 1], newLines[index]] = [newLines[index], newLines[index - 1]];
+    } else if (direction === "down" && index < newLines.length - 1) {
+      [newLines[index], newLines[index + 1]] = [newLines[index + 1], newLines[index]];
+    }
+    setDialogLines(newLines);
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center space-x-2 mb-1">
+              <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
+              {currentProject && (
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                  {currentProject.name}
+                </span>
+              )}
+              {currentSession && (
+                <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+                  {currentSession.name}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500">
+              Create and edit dialog sequences for multi-speaker text-to-speech
+            </p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setDialogLines([])}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+            >
+              Clear Session
+            </button>
+            <div className="text-xs text-gray-500 bg-green-50 px-3 py-2 rounded-lg">
+              Auto-saved
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Four-panel layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Session Manager - Far Left */}
+        <div className="w-64 flex-shrink-0">
+          <SessionManager />
+        </div>
+
+        {/* Speaker selector - Left */}
+        <div className="w-56 flex-shrink-0">
+          <SpeakerSelector
+            speakers={speakers}
+            selectedSpeakerId={selectedSpeakerId}
+            onSelectSpeaker={handleSelectSpeaker}
+          />
+        </div>
+
+        {/* Dialog editor - Center */}
+        <div className="flex-1">
+          <DialogEditor
+            dialogLines={dialogLines}
+            speakers={speakers}
+            onUpdateLine={handleUpdateLine}
+            onDeleteLine={handleDeleteLine}
+            onMoveLine={handleMoveLine}
+          />
+        </div>
+
+        {/* Preview - Right */}
+        <div className="w-96 flex-shrink-0">
+          <DialogPreview dialogLines={dialogLines} speakers={speakers} />
+        </div>
+      </div>
+    </div>
+  );
+}
