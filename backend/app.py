@@ -99,4 +99,4 @@ def register_blueprints(app):
     """Register API blueprints"""
     from backend.api import api_bp
 
-    app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(api_bp, url_prefix='/api/v1')

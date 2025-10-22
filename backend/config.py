@@ -14,6 +14,10 @@ class Config:
     # CORS
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
 
+    # Workspace settings
+    WORKSPACE_DIR = Path(os.environ.get('WORKSPACE_DIR', './workspace'))
+    PROJECTS_META_FILE = 'projects.json'
+
     # Upload settings
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
     UPLOAD_FOLDER = Path(os.environ.get('UPLOAD_FOLDER', './uploads'))

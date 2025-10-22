@@ -13,5 +13,6 @@ def ping():
     return jsonify({'message': 'pong', 'status': 'ok'}), 200
 
 
-# Import route modules (will be created later)
-# from backend.api import projects, speakers, generation
+# Import route modules
+from backend.api import projects  # noqa: F401, E402
+# from backend.api import speakers, generation  # To be implemented

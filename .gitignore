@@ -224,3 +224,6 @@ backend/.env
 backend/uploads/
 backend/__pycache__/
 backend/**/__pycache__/
+
+# Workspace
+workspace/

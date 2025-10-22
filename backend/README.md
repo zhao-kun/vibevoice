@@ -76,10 +76,85 @@ Returns API information.
 ### Test Endpoint
 
 ```
-GET /api/ping
+GET /api/v1/ping
 ```
 
 Simple ping endpoint for testing.
+
+### Projects API
+
+#### List Projects
+```
+GET /api/v1/projects
+```
+
+Returns all projects with metadata.
+
+**Response:**
+```json
+{
+  "projects": [
+    {
+      "id": "my-project",
+      "name": "My Project",
+      "description": "Project description",
+      "created_at": "2025-10-22T03:18:58.969507",
+      "updated_at": "2025-10-22T03:18:58.969507"
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Get Project
+```
+GET /api/v1/projects/<project_id>
+```
+
+Get specific project by ID.
+
+#### Create Project
+```
+POST /api/v1/projects
+Content-Type: application/json
+
+{
+  "name": "Project Name",
+  "description": "Optional description"
+}
+```
+
+Creates a new project directory with subdirectories (`voices/`, `scripts/`, `outputs/`) and adds metadata entry.
+
+**Response:** HTTP 201 with project data
+
+#### Update Project
+```
+PUT /api/v1/projects/<project_id>
+Content-Type: application/json
+
+{
+  "name": "Updated Name",
+  "description": "Updated description"
+}
+```
+
+Updates project metadata (name and/or description).
+
+#### Delete Project
+```
+DELETE /api/v1/projects/<project_id>
+```
+
+Deletes project directory and removes from metadata.
+
+**Response:**
+```json
+{
+  "message": "Project deleted successfully",
+  "project_id": "my-project"
+}
+```
 
 ## Configuration
 
@@ -91,6 +166,7 @@ Environment variables (see `.env.example`):
 - `FLASK_DEBUG`: Enable debug mode (default: true)
 - `SECRET_KEY`: Flask secret key
 - `CORS_ORIGINS`: Allowed CORS origins (comma-separated)
+- `WORKSPACE_DIR`: Root directory for all projects (default: ./workspace)
 - `MODEL_PATH`: Path to VibeVoice model
 - `MODEL_DEVICE`: Device for model inference (cuda/cpu)
 - `UPLOAD_FOLDER`: Directory for uploaded files
@@ -111,10 +187,22 @@ Environment variables (see `.env.example`):
 2. Define routes using Flask blueprints
 3. Import and register the blueprint in `api/__init__.py`
 
+## Project Directory Structure
+
+Each project is stored as a directory under `WORKSPACE_DIR`:
+
+```
+workspace/
+├── projects.json              # Metadata for all projects
+└── my-project/               # Project directory (named by project ID)
+    ├── voices/               # Speaker voice samples
+    ├── scripts/              # Dialog scripts
+    └── outputs/              # Generated audio files
+```
+
 ## Future Implementation
 
 The following endpoints are planned for implementation:
 
-- **Projects API**: CRUD operations for projects
 - **Speakers API**: Manage speaker roles and voice files
 - **Generation API**: Speech generation from dialog sessions
