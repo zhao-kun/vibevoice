@@ -149,7 +149,7 @@ class ProjectService:
 
         return project
 
-    def update_project(self, project_id: str, name: Optional[str] = None, 
+    def update_project(self, project_id: str, name: Optional[str] = None,
                        description: Optional[str] = None) -> Optional[Project]:
         """
         Update project metadata

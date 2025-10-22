@@ -4,7 +4,7 @@ File and directory handling utilities
 import json
 import shutil
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 class FileHandler:
@@ -53,6 +53,46 @@ class FileHandler:
 
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=indent, ensure_ascii=False)
+
+    @staticmethod
+    def write_json_atomic(file_path: Path, data: Dict[str, Any], indent: int = 2) -> None:
+        """
+        Atomically write data to JSON file using temp file + rename
+
+        This ensures that if the write fails, the original file remains intact.
+
+        Args:
+            file_path: Path to JSON file
+            data: Data to write
+            indent: JSON indentation (default: 2)
+        """
+        import tempfile
+        import os
+
+        # Ensure parent directory exists
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to temporary file in the same directory
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=file_path.parent,
+            prefix=f'.{file_path.name}.',
+            suffix='.tmp'
+        )
+
+        try:
+            # Write JSON to temp file
+            with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=indent, ensure_ascii=False)
+
+            # Atomically replace the original file
+            os.replace(temp_path, file_path)
+        except Exception:
+            # Clean up temp file on error
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
     def delete_directory(path: Path, ignore_errors: bool = False) -> None:
