@@ -16,21 +16,29 @@ export default function ProjectSelector() {
     router.push("/voice-editor");
   };
 
-  const handleCreateProject = () => {
+  const handleCreateProject = async () => {
     if (newProjectName.trim()) {
-      createProject(newProjectName.trim(), newProjectDescription.trim());
-      setNewProjectName("");
-      setNewProjectDescription("");
-      setShowCreateModal(false);
-      // Will automatically navigate via the context update
-      setTimeout(() => router.push("/voice-editor"), 100);
+      try {
+        await createProject(newProjectName.trim(), newProjectDescription.trim());
+        setNewProjectName("");
+        setNewProjectDescription("");
+        setShowCreateModal(false);
+        // Will automatically navigate via the context update
+        setTimeout(() => router.push("/voice-editor"), 100);
+      } catch (err) {
+        alert("Failed to create project. Please try again.");
+      }
     }
   };
 
-  const handleDeleteProject = (projectId: string, e: React.MouseEvent) => {
+  const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm("Are you sure you want to delete this project?")) {
-      deleteProject(projectId);
+      try {
+        await deleteProject(projectId);
+      } catch (err) {
+        alert("Failed to delete project. Please try again.");
+      }
     }
   };
 

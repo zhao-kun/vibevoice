@@ -225,5 +225,7 @@ backend/uploads/
 backend/__pycache__/
 backend/**/__pycache__/
 
+!frontend/lib/
+
 # Workspace
 workspace/
