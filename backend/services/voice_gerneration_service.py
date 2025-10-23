@@ -31,7 +31,7 @@ class VoiceGenerationService:
         # Initialize metadata file if it doesn't exist
         if not self.meta_file_path.exists():
             self._save_metadata([])
-    
+
     def _load_metadata(self) -> List[Dict[str, Any]]:
         """
         Load generation metadata from JSON file
@@ -61,8 +61,8 @@ class VoiceGenerationService:
             self.file_handler.write_json(self.meta_file_path, generations)
         except Exception as e:
             raise RuntimeError(f"Failed to save generation metadata: {str(e)}")
-    
-    def generation(self, dialog_session_id: str, request_id: str) -> Generation:
+
+    def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42) -> Generation:
         """
         Generate voices for a specific dialog session
 
@@ -76,8 +76,8 @@ class VoiceGenerationService:
             raise ValueError(f"Dialog session with ID '{dialog_session_id}' not found")
 
         # Placeholder for actual voice generation logic
-        generation = Generation.create(request_id, dialog_session_id)
-    
+        generation = Generation.create(request_id, dialog_session_id, seeds)
+
         # Load existing metadata
         generations = self._load_metadata()
         generations.append(generation.to_dict())

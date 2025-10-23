@@ -279,3 +279,20 @@ class SpeakerService:
         if speaker:
             return self.voices_dir / speaker.voice_filename
         return None
+
+    def get_speakers_filepath(self, speaker_names: List[str]) -> List[str]:
+        """
+        Get absolute paths to multiple speakers' voice files
+
+        Args:
+            speaker_names: List of speaker names (e.g., "Speaker 1", "Speaker 2")
+
+        Returns:
+            List of paths to voice files
+        """
+        file_paths = []
+        for name in speaker_names:
+            speaker = self.get_speaker(name)
+            if speaker:
+                file_paths.append(str(self.voices_dir / speaker.voice_filename))
+        return file_paths

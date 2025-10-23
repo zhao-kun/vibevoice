@@ -2,6 +2,9 @@
 Dialog session management service - handles business logic for dialog sessions
 """
 import uuid
+import re
+
+from typing import Tuple
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 
@@ -312,3 +315,53 @@ class DialogSessionService:
         if session:
             return self.scripts_dir / session.text_filename
         return None
+
+    def parse_session_txt_script(self, session_id: str) -> Tuple[str, List[str], List[str]]:
+        """
+        Parse txt script content and extract speakers and their text
+        Fixed pattern: Speaker 1, Speaker 2, Speaker 3, Speaker 4
+        Returns: (txt_content, scripts, unique_speaker_names)
+        """
+        txt_content: str = self.get_session_text(session_id)
+        if txt_content is None:
+            raise ValueError(f"Dialog session with ID '{session_id}' not found")
+        lines = txt_content.strip().split('\n')
+        scripts = []
+        speaker_numbers = []
+
+        # Pattern to match "Speaker X:" format where X is a number
+        speaker_pattern = r'^Speaker\s+(\d+):\s*(.*)$'
+
+        current_speaker = None
+        current_text = ""
+        unique_speaker_names: Set[str] = set()
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            match = re.match(speaker_pattern, line, re.IGNORECASE)
+            if match:
+                # If we have accumulated text from previous speaker, save it
+                if current_speaker and current_text:
+                    scripts.append(f"Speaker {current_speaker}: {current_text.strip()}")
+                    speaker_numbers.append(current_speaker)
+                    unique_speaker_names.add(f"Speaker {current_speaker}")
+
+                # Start new speaker
+                current_speaker = match.group(1).strip()
+                current_text = match.group(2).strip()
+            else:
+                # Continue text for current speaker
+                if current_text:
+                    current_text += " " + line
+                else:
+                    current_text = line
+
+        # Don't forget the last speaker
+        if current_speaker and current_text:
+            scripts.append(f"Speaker {current_speaker}: {current_text.strip()}")
+            speaker_numbers.append(current_speaker)
+
+        return txt_content, scripts, sorted(list(unique_speaker_names))
