@@ -124,21 +124,21 @@ class DialogSessionService:
         if not name or not name.strip():
             raise ValueError("Session name cannot be empty")
 
-        if not dialog_text or not dialog_text.strip():
-            raise ValueError("Dialog text cannot be empty")
+        # Allow empty dialog text - user can add dialogs later
+        # Only validate if dialog text is provided
+        if dialog_text and dialog_text.strip():
+            # Validate dialog text format
+            try:
+                DialogValidator.parse_dialog_text(dialog_text)
+            except ValueError as e:
+                raise ValueError(f"Invalid dialog text format: {str(e)}")
 
-        # Validate dialog text format
-        try:
-            DialogValidator.parse_dialog_text(dialog_text)
-        except ValueError as e:
-            raise ValueError(f"Invalid dialog text format: {str(e)}")
-
-        # Validate speaker IDs if speaker service is available
-        valid_speaker_ids = self._get_valid_speaker_ids()
-        if valid_speaker_ids:
-            is_valid, error_msg = DialogValidator.validate_speaker_ids(dialog_text, valid_speaker_ids)
-            if not is_valid:
-                raise ValueError(f"Speaker ID validation failed: {error_msg}")
+            # Validate speaker IDs if speaker service is available
+            valid_speaker_ids = self._get_valid_speaker_ids()
+            if valid_speaker_ids:
+                is_valid, error_msg = DialogValidator.validate_speaker_ids(dialog_text, valid_speaker_ids)
+                if not is_valid:
+                    raise ValueError(f"Speaker ID validation failed: {error_msg}")
 
         # Generate unique session ID and filename
         session_id = str(uuid.uuid4())

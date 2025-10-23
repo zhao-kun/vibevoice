@@ -4,19 +4,25 @@ import { useState } from "react";
 import { useSession } from "@/lib/SessionContext";
 
 export default function SessionManager() {
-  const { sessions, currentSession, selectSession, createSession, deleteSession, updateSession } = useSession();
+  const { sessions, currentSession, selectSession, createSession, deleteSession, updateSession, loading, error } = useSession();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingSession, setEditingSession] = useState<string | null>(null);
   const [newSessionName, setNewSessionName] = useState("");
   const [newSessionDescription, setNewSessionDescription] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
     if (newSessionName.trim()) {
-      createSession(newSessionName.trim(), newSessionDescription.trim());
-      setNewSessionName("");
-      setNewSessionDescription("");
-      setShowCreateModal(false);
+      setLocalError(null);
+      try {
+        await createSession(newSessionName.trim(), newSessionDescription.trim());
+        setNewSessionName("");
+        setNewSessionDescription("");
+        setShowCreateModal(false);
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : "Failed to create session");
+      }
     }
   };
 
@@ -30,28 +36,48 @@ export default function SessionManager() {
     }
   };
 
-  const handleUpdateSession = () => {
+  const handleUpdateSession = async () => {
     if (editingSession && newSessionName.trim()) {
-      updateSession(editingSession, {
-        name: newSessionName.trim(),
-        description: newSessionDescription.trim(),
-      });
-      setEditingSession(null);
-      setNewSessionName("");
-      setNewSessionDescription("");
-      setShowEditModal(false);
+      setLocalError(null);
+      try {
+        await updateSession(editingSession, {
+          name: newSessionName.trim(),
+          description: newSessionDescription.trim(),
+        });
+        setEditingSession(null);
+        setNewSessionName("");
+        setNewSessionDescription("");
+        setShowEditModal(false);
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : "Failed to update session");
+      }
     }
   };
 
-  const handleDeleteSession = (sessionId: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm("Are you sure you want to delete this session?")) {
-      deleteSession(sessionId);
+      setLocalError(null);
+      try {
+        await deleteSession(sessionId);
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : "Failed to delete session");
+        alert(err instanceof Error ? err.message : "Failed to delete session");
+      }
     }
   };
 
   return (
     <div className="h-full flex flex-col bg-gray-50 border-r border-gray-200">
+      {/* Error Display */}
+      {(error || localError) && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+          <p className="text-xs text-red-800">
+            {error || localError}
+          </p>
+        </div>
+      )}
+
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-semibold text-gray-800">Dialog Sessions</h2>
         <p className="text-xs text-gray-500 mt-1">Manage multiple dialog sessions</p>
@@ -124,12 +150,13 @@ export default function SessionManager() {
       <div className="p-4 border-t border-gray-200">
         <button
           onClick={() => setShowCreateModal(true)}
-          className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
+          disabled={loading}
+          className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          <span>New Session</span>
+          <span>{loading ? "Loading..." : "New Session"}</span>
         </button>
       </div>
 
@@ -181,10 +208,10 @@ export default function SessionManager() {
               </button>
               <button
                 onClick={handleCreateSession}
-                disabled={!newSessionName.trim()}
+                disabled={!newSessionName.trim() || loading}
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create
+                {loading ? "Creating..." : "Create"}
               </button>
             </div>
           </div>
@@ -240,10 +267,10 @@ export default function SessionManager() {
               </button>
               <button
                 onClick={handleUpdateSession}
-                disabled={!newSessionName.trim()}
+                disabled={!newSessionName.trim() || loading}
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Update
+                {loading ? "Updating..." : "Update"}
               </button>
             </div>
           </div>

@@ -26,8 +26,9 @@ class DialogValidator:
         Raises:
             ValueError: If text format is invalid
         """
+        # Allow empty text - return empty list
         if not text or not text.strip():
-            raise ValueError("Dialog text cannot be empty")
+            return []
 
         lines = text.strip().split('\n')
         dialogs = []
@@ -59,9 +60,7 @@ class DialogValidator:
 
             dialogs.append((speaker_id, dialog_text))
 
-        if not dialogs:
-            raise ValueError("No valid dialog entries found in text")
-
+        # Allow empty dialogs - user can add them later
         return dialogs
 
     @staticmethod

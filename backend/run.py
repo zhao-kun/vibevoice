@@ -17,8 +17,6 @@ sys.path.insert(0, str(project_root))
 
 from backend.app import create_app  # noqa: E402
 
-
-
 def main():
     """Run the development server"""
     # Set environment for development

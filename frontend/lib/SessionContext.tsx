@@ -1,17 +1,21 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { DialogSession } from "@/types/dialog";
+import { DialogSession, DialogLine } from "@/types/dialog";
 import { useProject } from "@/lib/ProjectContext";
+import { api } from "@/lib/api";
+import type { DialogSession as ApiDialogSession } from "@/lib/api";
 
 interface SessionContextType {
   sessions: DialogSession[];
   currentSession: DialogSession | null;
-  selectSession: (sessionId: string) => void;
-  createSession: (name: string, description: string) => void;
-  deleteSession: (sessionId: string) => void;
-  updateSession: (sessionId: string, updates: Partial<DialogSession>) => void;
-  updateSessionDialogs: (sessionId: string, dialogLines: any[]) => void;
+  selectSession: (sessionId: string) => Promise<void>;
+  createSession: (name: string, description: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  updateSession: (sessionId: string, updates: Partial<DialogSession>) => Promise<void>;
+  updateSessionDialogs: (sessionId: string, dialogLines: DialogLine[]) => Promise<void>;
+  loading: boolean;
+  error: string | null;
 }
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
@@ -20,102 +24,185 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const { currentProject } = useProject();
   const [sessions, setSessions] = useState<DialogSession[]>([]);
   const [currentSession, setCurrentSession] = useState<DialogSession | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Load sessions from localStorage when project changes
-  useEffect(() => {
-    if (currentProject) {
-      const savedSessions = localStorage.getItem(`vibevoice_sessions_${currentProject.id}`);
-      const savedCurrentSessionId = localStorage.getItem(`vibevoice_current_session_${currentProject.id}`);
+  // Helper: Convert backend dialog text to DialogLine array
+  const parseDialogText = (dialogText: string): DialogLine[] => {
+    const lines: DialogLine[] = [];
+    const textLines = dialogText.trim().split('\n\n');
 
-      if (savedSessions) {
-        const parsed = JSON.parse(savedSessions);
-        const sessionsWithDates = parsed.map((s: any) => ({
-          ...s,
-          createdAt: new Date(s.createdAt),
-          updatedAt: new Date(s.updatedAt),
-        }));
-        setSessions(sessionsWithDates);
-
-        if (savedCurrentSessionId) {
-          const current = sessionsWithDates.find((s: DialogSession) => s.id === savedCurrentSessionId);
-          if (current) {
-            setCurrentSession(current);
-          } else {
-            setCurrentSession(sessionsWithDates[0] || null);
-          }
-        } else {
-          setCurrentSession(sessionsWithDates[0] || null);
-        }
-      } else {
-        // Create a default session on first load
-        const defaultSession: DialogSession = {
-          id: "session-1",
-          name: "Dialog Session 1",
-          description: "Default dialog session",
-          dialogLines: [],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        setSessions([defaultSession]);
-        setCurrentSession(defaultSession);
-        localStorage.setItem(`vibevoice_sessions_${currentProject.id}`, JSON.stringify([defaultSession]));
-        localStorage.setItem(`vibevoice_current_session_${currentProject.id}`, defaultSession.id);
+    textLines.forEach((line, index) => {
+      const match = line.match(/^(Speaker \d+):\s*(.*)$/);
+      if (match) {
+        lines.push({
+          id: `line-${Date.now()}-${index}`,
+          speakerId: match[1],
+          content: match[2],
+        });
       }
-    } else {
-      setSessions([]);
-      setCurrentSession(null);
+    });
+
+    return lines;
+  };
+
+  // Helper: Convert DialogLine array to backend dialog text
+  const formatDialogText = (dialogLines: DialogLine[]): string => {
+    return dialogLines
+      .map(line => `${line.speakerId}: ${line.content}`)
+      .join('\n\n');
+  };
+
+  // Helper: Convert backend session to frontend session
+  const backendToFrontend = async (apiSession: ApiDialogSession, projectId: string): Promise<DialogSession> => {
+    // Fetch dialog text if session has a text file
+    let dialogLines: DialogLine[] = [];
+    if (apiSession.text_filename) {
+      try {
+        const textResponse = await api.getSessionText(projectId, apiSession.session_id);
+        dialogLines = parseDialogText(textResponse.dialog_text);
+      } catch (err) {
+        console.error('Failed to load dialog text:', err);
+      }
     }
+
+    return {
+      id: apiSession.session_id,
+      sessionId: apiSession.session_id,
+      name: apiSession.name,
+      description: apiSession.description,
+      textFilename: apiSession.text_filename,
+      dialogLines,
+      createdAt: new Date(apiSession.created_at),
+      updatedAt: new Date(apiSession.updated_at),
+    };
+  };
+
+  // Load sessions from backend when project changes
+  useEffect(() => {
+    const loadSessions = async () => {
+      if (!currentProject) {
+        setSessions([]);
+        setCurrentSession(null);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await api.listSessions(currentProject.id);
+
+        // Convert all sessions from backend format
+        const frontendSessions = await Promise.all(
+          response.sessions.map(s => backendToFrontend(s, currentProject.id))
+        );
+
+        setSessions(frontendSessions);
+
+        // Restore current session from localStorage or use first session
+        const savedCurrentSessionId = localStorage.getItem(`vibevoice_current_session_${currentProject.id}`);
+        if (savedCurrentSessionId) {
+          const current = frontendSessions.find((s: DialogSession) => s.id === savedCurrentSessionId);
+          setCurrentSession(current || frontendSessions[0] || null);
+        } else {
+          setCurrentSession(frontendSessions[0] || null);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to load sessions";
+        setError(errorMessage);
+        console.error("Error loading sessions:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSessions();
   }, [currentProject]);
 
-  // Save sessions to localStorage whenever they change
-  useEffect(() => {
-    if (currentProject && sessions.length > 0) {
-      localStorage.setItem(`vibevoice_sessions_${currentProject.id}`, JSON.stringify(sessions));
-    }
-  }, [sessions, currentProject]);
-
-  // Save current session to localStorage
+  // Save current session ID to localStorage
   useEffect(() => {
     if (currentProject && currentSession) {
       localStorage.setItem(`vibevoice_current_session_${currentProject.id}`, currentSession.id);
     }
   }, [currentSession, currentProject]);
 
-  const selectSession = (sessionId: string) => {
+  const selectSession = async (sessionId: string): Promise<void> => {
+    setError(null);
     const session = sessions.find((s) => s.id === sessionId);
     if (session) {
       setCurrentSession(session);
     }
   };
 
-  const createSession = (name: string, description: string) => {
-    const newSession: DialogSession = {
-      id: `session-${Date.now()}`,
-      name,
-      description,
-      dialogLines: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    setSessions([...sessions, newSession]);
-    setCurrentSession(newSession);
+  const createSession = async (name: string, description: string): Promise<void> => {
+    if (!currentProject) {
+      throw new Error("No project selected");
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Create session on backend with empty dialog text
+      const newApiSession = await api.createSession(currentProject.id, {
+        name,
+        description,
+        dialog_text: "", // Empty initially
+      });
+
+      // Convert to frontend format
+      const newSession = await backendToFrontend(newApiSession, currentProject.id);
+
+      setSessions([...sessions, newSession]);
+      setCurrentSession(newSession);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to create session";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const deleteSession = (sessionId: string) => {
+  const deleteSession = async (sessionId: string): Promise<void> => {
+    if (!currentProject) {
+      throw new Error("No project selected");
+    }
+
     if (sessions.length <= 1) {
-      alert("Cannot delete the last session");
-      return;
+      throw new Error("Cannot delete the last session");
     }
 
-    const newSessions = sessions.filter((s) => s.id !== sessionId);
-    setSessions(newSessions);
+    setLoading(true);
+    setError(null);
 
-    if (currentSession?.id === sessionId) {
-      setCurrentSession(newSessions[0]);
+    try {
+      await api.deleteSession(currentProject.id, sessionId);
+
+      const newSessions = sessions.filter((s) => s.id !== sessionId);
+      setSessions(newSessions);
+
+      if (currentSession?.id === sessionId) {
+        setCurrentSession(newSessions[0] || null);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to delete session";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateSession = (sessionId: string, updates: Partial<DialogSession>) => {
+  const updateSession = async (sessionId: string, updates: Partial<DialogSession>): Promise<void> => {
+    if (!currentProject) {
+      throw new Error("No project selected");
+    }
+
+    setError(null);
+
+    // Update local state immediately for better UX
     const updatedSessions = sessions.map((s) =>
       s.id === sessionId
         ? { ...s, ...updates, updatedAt: new Date() }
@@ -126,18 +213,60 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (currentSession?.id === sessionId) {
       setCurrentSession({ ...currentSession, ...updates, updatedAt: new Date() });
     }
+
+    // Only sync name/description to backend (not dialogLines)
+    if (updates.name !== undefined || updates.description !== undefined) {
+      try {
+        const updateData: { name?: string; description?: string } = {};
+        if (updates.name !== undefined) updateData.name = updates.name;
+        if (updates.description !== undefined) updateData.description = updates.description;
+
+        const updatedApiSession = await api.updateSession(currentProject.id, sessionId, updateData);
+
+        // Update with backend response
+        const updatedSession = await backendToFrontend(updatedApiSession, currentProject.id);
+        setSessions(sessions.map(s => s.id === sessionId ? updatedSession : s));
+        if (currentSession?.id === sessionId) {
+          setCurrentSession(updatedSession);
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to update session";
+        setError(errorMessage);
+        throw err;
+      }
+    }
   };
 
-  const updateSessionDialogs = (sessionId: string, dialogLines: any[]) => {
-    const updatedSessions = sessions.map((s) =>
-      s.id === sessionId
-        ? { ...s, dialogLines, updatedAt: new Date() }
-        : s
-    );
-    setSessions(updatedSessions);
+  const updateSessionDialogs = async (sessionId: string, dialogLines: DialogLine[]): Promise<void> => {
+    if (!currentProject) {
+      throw new Error("No project selected");
+    }
 
-    if (currentSession?.id === sessionId) {
-      setCurrentSession({ ...currentSession, dialogLines, updatedAt: new Date() });
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Convert dialog lines to backend text format
+      const dialogText = formatDialogText(dialogLines);
+
+      // Update on backend
+      const updatedApiSession = await api.updateSession(currentProject.id, sessionId, {
+        dialog_text: dialogText,
+      });
+
+      // Update local state
+      const updatedSession = await backendToFrontend(updatedApiSession, currentProject.id);
+      setSessions(sessions.map(s => s.id === sessionId ? updatedSession : s));
+
+      if (currentSession?.id === sessionId) {
+        setCurrentSession(updatedSession);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to update dialog";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,6 +280,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         deleteSession,
         updateSession,
         updateSessionDialogs,
+        loading,
+        error,
       }}
     >
       {children}

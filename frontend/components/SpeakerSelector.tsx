@@ -42,13 +42,10 @@ export default function SpeakerSelector({
                 w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm
                 ${isSelected ? "bg-blue-600" : "bg-blue-100 text-blue-600"}
               `}>
-                {speaker.id}
+                {speaker.id.replace('Speaker ', '')}
               </div>
               <div className="flex-1">
                 <div className="font-medium">{speaker.displayName}</div>
-                <div className={`text-xs ${isSelected ? "text-blue-100" : "text-gray-500"}`}>
-                  {speaker.name}
-                </div>
               </div>
             </button>
           );

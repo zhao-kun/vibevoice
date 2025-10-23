@@ -132,7 +132,7 @@ def create_session(project_id):
 
         name = data.get('name')
         description = data.get('description', '')
-        dialog_text = data.get('dialog_text')
+        dialog_text = data.get('dialog_text', '')  # Default to empty string if not provided
 
         if not name:
             return jsonify({
@@ -140,12 +140,7 @@ def create_session(project_id):
                 'message': 'Session name is required'
             }), 400
 
-        if not dialog_text:
-            return jsonify({
-                'error': 'Bad Request',
-                'message': 'Dialog text is required'
-            }), 400
-
+        # Allow empty dialog_text - user can add dialogs later
         session = service.create_session(name, description, dialog_text)
 
         return jsonify(session.to_dict()), 201

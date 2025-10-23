@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import SpeakerSelector from "@/components/SpeakerSelector";
 import DialogEditor from "@/components/DialogEditor";
 import DialogPreview from "@/components/DialogPreview";
@@ -8,20 +8,30 @@ import SessionManager from "@/components/SessionManager";
 import { DialogLine, SpeakerInfo } from "@/types/dialog";
 import { useProject } from "@/lib/ProjectContext";
 import { useSession } from "@/lib/SessionContext";
+import { SpeakerRoleProvider, useSpeakerRole } from "@/lib/SpeakerRoleContext";
 
-const DEFAULT_SPEAKERS: SpeakerInfo[] = [
-  { id: "1", name: "Speaker 1", displayName: "Speaker 1" },
-  { id: "2", name: "Speaker 2", displayName: "Speaker 2" },
-  { id: "3", name: "Speaker 3", displayName: "Speaker 3" },
-  { id: "4", name: "Speaker 4", displayName: "Speaker 4" },
-];
-
-export default function VoiceEditorPage() {
+function VoiceEditorContent() {
   const { currentProject } = useProject();
   const { currentSession, updateSessionDialogs } = useSession();
+  const { speakerRoles } = useSpeakerRole();
   const [dialogLines, setDialogLines] = useState<DialogLine[]>([]);
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>("1");
-  const [speakers] = useState<SpeakerInfo[]>(DEFAULT_SPEAKERS);
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
+
+  // Convert speaker roles to SpeakerInfo format
+  const speakers: SpeakerInfo[] = useMemo(() => {
+    return speakerRoles.map(role => ({
+      id: role.speakerId,
+      name: role.speakerId,
+      displayName: role.name || role.speakerId,
+    }));
+  }, [speakerRoles]);
+
+  // Auto-select first speaker when speakers load
+  useEffect(() => {
+    if (speakers.length > 0 && !selectedSpeakerId) {
+      setSelectedSpeakerId(speakers[0].id);
+    }
+  }, [speakers, selectedSpeakerId]);
 
   // Load dialog lines from current session (only when session ID changes)
   useEffect(() => {
@@ -151,5 +161,26 @@ export default function VoiceEditorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function VoiceEditorPage() {
+  const { currentProject } = useProject();
+
+  if (!currentProject) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">No Project Selected</h2>
+          <p className="text-gray-500">Please select a project to edit voice contents</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <SpeakerRoleProvider projectId={currentProject.id}>
+      <VoiceEditorContent />
+    </SpeakerRoleProvider>
   );
 }
