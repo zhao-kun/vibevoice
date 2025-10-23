@@ -8,6 +8,10 @@ interface DialogEditorProps {
   onUpdateLine: (lineId: string, content: string) => void;
   onDeleteLine: (lineId: string) => void;
   onMoveLine: (lineId: string, direction: "up" | "down") => void;
+  onClear: () => void;
+  onSave: () => void;
+  hasUnsavedChanges: boolean;
+  isSaving: boolean;
 }
 
 export default function DialogEditor({
@@ -16,6 +20,10 @@ export default function DialogEditor({
   onUpdateLine,
   onDeleteLine,
   onMoveLine,
+  onClear,
+  onSave,
+  hasUnsavedChanges,
+  isSaving,
 }: DialogEditorProps) {
   const getSpeakerById = (speakerId: string) => {
     return speakers.find((s) => s.id === speakerId);
@@ -24,8 +32,30 @@ export default function DialogEditor({
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">Dialog Editor</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold text-gray-800">Dialog Editor</h2>
+          <div className="flex items-center space-x-2">
+            {hasUnsavedChanges && (
+              <span className="text-xs text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg">
+                Unsaved changes
+              </span>
+            )}
+            <button
+              onClick={onClear}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+            >
+              Clear
+            </button>
+            <button
+              onClick={onSave}
+              disabled={!hasUnsavedChanges || isSaving}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+        <p className="text-sm text-gray-500">
           {dialogLines.length} dialog lines • Edit content and manage sequence
         </p>
       </div>

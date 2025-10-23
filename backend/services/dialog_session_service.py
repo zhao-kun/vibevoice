@@ -195,23 +195,23 @@ class DialogSessionService:
             if session.session_id == session_id:
                 # Validate and update dialog text if provided
                 if dialog_text is not None:
-                    if not dialog_text.strip():
-                        raise ValueError("Dialog text cannot be empty")
+                    # Allow empty dialog text (consistent with create behavior)
+                    if dialog_text.strip():
+                        # Only validate if dialog text is not empty
+                        # Validate dialog text format
+                        try:
+                            DialogValidator.parse_dialog_text(dialog_text)
+                        except ValueError as e:
+                            raise ValueError(f"Invalid dialog text format: {str(e)}")
 
-                    # Validate dialog text format
-                    try:
-                        DialogValidator.parse_dialog_text(dialog_text)
-                    except ValueError as e:
-                        raise ValueError(f"Invalid dialog text format: {str(e)}")
+                        # Validate speaker IDs if speaker service is available
+                        valid_speaker_ids = self._get_valid_speaker_ids()
+                        if valid_speaker_ids:
+                            is_valid, error_msg = DialogValidator.validate_speaker_ids(dialog_text, valid_speaker_ids)
+                            if not is_valid:
+                                raise ValueError(f"Speaker ID validation failed: {error_msg}")
 
-                    # Validate speaker IDs if speaker service is available
-                    valid_speaker_ids = self._get_valid_speaker_ids()
-                    if valid_speaker_ids:
-                        is_valid, error_msg = DialogValidator.validate_speaker_ids(dialog_text, valid_speaker_ids)
-                        if not is_valid:
-                            raise ValueError(f"Speaker ID validation failed: {error_msg}")
-
-                    # Update text file
+                    # Update text file (even if empty)
                     text_file_path = self.scripts_dir / session.text_filename
                     with open(text_file_path, 'w', encoding='utf-8') as f:
                         f.write(dialog_text)

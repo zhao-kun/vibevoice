@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import SpeakerSelector from "@/components/SpeakerSelector";
 import DialogEditor from "@/components/DialogEditor";
 import DialogPreview from "@/components/DialogPreview";
@@ -16,6 +16,8 @@ function VoiceEditorContent() {
   const { speakerRoles } = useSpeakerRole();
   const [dialogLines, setDialogLines] = useState<DialogLine[]>([]);
   const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Convert speaker roles to SpeakerInfo format
   const speakers: SpeakerInfo[] = useMemo(() => {
@@ -37,21 +39,20 @@ function VoiceEditorContent() {
   useEffect(() => {
     if (currentSession) {
       setDialogLines(currentSession.dialogLines);
+      setHasUnsavedChanges(false);
     } else {
       setDialogLines([]);
+      setHasUnsavedChanges(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id]);
 
-  // Save dialog lines to current session whenever they change
+  // Track unsaved changes
   useEffect(() => {
-    if (currentSession && dialogLines.length >= 0) {
-      // Only update if the dialog lines are different (deep comparison by length and content)
-      const isDifferent = JSON.stringify(dialogLines) !== JSON.stringify(currentSession.dialogLines);
-      if (isDifferent) {
-        updateSessionDialogs(currentSession.id, dialogLines);
-      }
-    }
+    if (!currentSession) return;
+
+    const isDifferent = JSON.stringify(dialogLines) !== JSON.stringify(currentSession.dialogLines);
+    setHasUnsavedChanges(isDifferent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogLines]);
 
@@ -91,41 +92,41 @@ function VoiceEditorContent() {
     setDialogLines(newLines);
   };
 
+  const handleSave = async () => {
+    if (!currentSession || !hasUnsavedChanges) return;
+
+    setIsSaving(true);
+    try {
+      await updateSessionDialogs(currentSession.id, dialogLines);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      console.error('Failed to save dialog:', error);
+      alert('Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center space-x-2 mb-1">
-              <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
-              {currentProject && (
-                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                  {currentProject.name}
-                </span>
-              )}
-              {currentSession && (
-                <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
-                  {currentSession.name}
-                </span>
-              )}
-            </div>
-            <p className="text-sm text-gray-500">
-              Create and edit dialog sequences for multi-speaker text-to-speech
-            </p>
-          </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setDialogLines([])}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
-            >
-              Clear Session
-            </button>
-            <div className="text-xs text-gray-500 bg-green-50 px-3 py-2 rounded-lg">
-              Auto-saved
-            </div>
-          </div>
+        <div className="flex items-center space-x-2 mb-1">
+          <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
+          {currentProject && (
+            <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+              {currentProject.name}
+            </span>
+          )}
+          {currentSession && (
+            <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">
+              {currentSession.name}
+            </span>
+          )}
         </div>
+        <p className="text-sm text-gray-500">
+          Create and edit dialog sequences for multi-speaker text-to-speech
+        </p>
       </header>
 
       {/* Four-panel layout */}
@@ -152,6 +153,10 @@ function VoiceEditorContent() {
             onUpdateLine={handleUpdateLine}
             onDeleteLine={handleDeleteLine}
             onMoveLine={handleMoveLine}
+            onClear={() => setDialogLines([])}
+            onSave={handleSave}
+            hasUnsavedChanges={hasUnsavedChanges}
+            isSaving={isSaving}
           />
         </div>
 
