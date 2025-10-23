@@ -1,11 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useSpeakerRole } from "@/lib/SpeakerRoleContext";
+import { useProject } from "@/lib/ProjectContext";
+import { api } from "@/lib/api";
 import AudioUploader from "./AudioUploader";
 import AudioPlayer from "./AudioPlayer";
 
 export default function SpeakerRoleManager() {
+  const { currentProject } = useProject();
   const {
     speakerRoles,
     addSpeakerRole,
@@ -13,23 +16,78 @@ export default function SpeakerRoleManager() {
     deleteSpeakerRole,
     uploadVoiceFile,
     removeVoiceFile,
-    saveSpeakerRoles,
     hasUnsavedChanges,
+    loading,
+    error,
   } = useSpeakerRole();
 
-  const handleDeleteRole = (id: string) => {
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const handleAddSpeaker = async () => {
+    setLocalError(null);
+    try {
+      await addSpeakerRole();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to add speaker");
+    }
+  };
+
+  const handleDeleteRole = async (speakerId: string) => {
     if (speakerRoles.length === 1) {
       alert("Cannot delete the last speaker role. At least one speaker is required.");
       return;
     }
 
-    if (confirm("Are you sure you want to delete this speaker role? This action cannot be undone.")) {
-      deleteSpeakerRole(id);
+    if (confirm("Are you sure you want to delete this speaker role? This will also delete the voice file. This action cannot be undone.")) {
+      setLocalError(null);
+      try {
+        await deleteSpeakerRole(speakerId);
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : "Failed to delete speaker");
+      }
+    }
+  };
+
+  const handleUploadVoice = async (speakerId: string, file: File) => {
+    setLocalError(null);
+    try {
+      await uploadVoiceFile(speakerId, file);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to upload voice file");
+    }
+  };
+
+  const handleRemoveVoice = async (speakerId: string) => {
+    if (confirm("Are you sure you want to remove this voice file?")) {
+      setLocalError(null);
+      try {
+        await removeVoiceFile(speakerId);
+      } catch (err) {
+        setLocalError(err instanceof Error ? err.message : "Failed to remove voice file");
+      }
+    }
+  };
+
+  const handleUpdateDescription = async (speakerId: string, description: string) => {
+    setLocalError(null);
+    try {
+      await updateSpeakerRole(speakerId, { description });
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to update description");
     }
   };
 
   return (
     <div className="h-full flex flex-col">
+      {/* Error Display */}
+      {(error || localError) && (
+        <div className="flex-shrink-0 bg-red-50 border-b border-red-200 px-4 py-3">
+          <p className="text-sm text-red-800">
+            {error || localError}
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex-shrink-0 border-b border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between">
@@ -41,21 +99,11 @@ export default function SpeakerRoleManager() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={addSpeakerRole}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={handleAddSpeaker}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              + Add Speaker
-            </button>
-            <button
-              onClick={saveSpeakerRoles}
-              disabled={!hasUnsavedChanges}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                hasUnsavedChanges
-                  ? "bg-green-600 text-white hover:bg-green-700"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {hasUnsavedChanges ? "Save Changes" : "Saved"}
+              {loading ? "Adding..." : "+ Add Speaker"}
             </button>
           </div>
         </div>
@@ -83,8 +131,9 @@ export default function SpeakerRoleManager() {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDeleteRole(role.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 hover:border-red-300"
+                  onClick={() => handleDeleteRole(role.speakerId)}
+                  disabled={loading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -104,11 +153,12 @@ export default function SpeakerRoleManager() {
                 <textarea
                   value={role.description}
                   onChange={(e) =>
-                    updateSpeakerRole(role.id, { description: e.target.value })
+                    handleUpdateDescription(role.speakerId, e.target.value)
                   }
                   placeholder="e.g., Deep male voice, professional tone..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={2}
+                  disabled={loading}
                 />
               </div>
 
@@ -117,14 +167,15 @@ export default function SpeakerRoleManager() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Voice Sample
                 </label>
-                {role.voiceFile ? (
+                {role.voiceFilename && currentProject ? (
                   <AudioPlayer
-                    voiceFile={role.voiceFile}
-                    onRemove={() => removeVoiceFile(role.id)}
+                    voiceFileUrl={api.getVoiceFileUrl(currentProject.id, role.speakerId)}
+                    voiceFileName={role.voiceFilename}
+                    onRemove={() => handleRemoveVoice(role.speakerId)}
                   />
                 ) : (
                   <AudioUploader
-                    onUpload={(file) => uploadVoiceFile(role.id, file)}
+                    onUpload={(file) => handleUploadVoice(role.speakerId, file)}
                   />
                 )}
               </div>
@@ -140,11 +191,11 @@ export default function SpeakerRoleManager() {
         </div>
       </div>
 
-      {/* Unsaved Changes Indicator */}
-      {hasUnsavedChanges && (
-        <div className="flex-shrink-0 bg-yellow-50 border-t border-yellow-200 px-4 py-3">
-          <p className="text-sm text-yellow-800">
-            You have unsaved changes. Click "Save Changes" to persist your modifications.
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="flex-shrink-0 bg-blue-50 border-t border-blue-200 px-4 py-3">
+          <p className="text-sm text-blue-800">
+            Syncing with server...
           </p>
         </div>
       )}

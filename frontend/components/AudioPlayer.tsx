@@ -1,18 +1,20 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { VoiceFile } from "@/types/speaker";
 
 interface AudioPlayerProps {
-  voiceFile: VoiceFile;
+  voiceFileUrl: string; // URL to fetch the audio file from backend
+  voiceFileName: string; // Original filename
   onRemove: () => void;
 }
 
-export default function AudioPlayer({ voiceFile, onRemove }: AudioPlayerProps) {
+export default function AudioPlayer({ voiceFileUrl, voiceFileName, onRemove }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [fileSize, setFileSize] = useState<number>(0);
+  const [fileType, setFileType] = useState<string>("");
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -40,7 +42,24 @@ export default function AudioPlayer({ voiceFile, onRemove }: AudioPlayerProps) {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("ended", handleEnded);
     };
-  }, [voiceFile.dataUrl]);
+  }, [voiceFileUrl]);
+
+  // Fetch file metadata
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const response = await fetch(voiceFileUrl, { method: 'HEAD' });
+        const size = response.headers.get('Content-Length');
+        const type = response.headers.get('Content-Type');
+        if (size) setFileSize(parseInt(size, 10));
+        if (type) setFileType(type);
+      } catch (error) {
+        console.error("Failed to fetch file metadata:", error);
+      }
+    };
+
+    fetchMetadata();
+  }, [voiceFileUrl]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -78,15 +97,15 @@ export default function AudioPlayer({ voiceFile, onRemove }: AudioPlayerProps) {
 
   return (
     <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-      <audio ref={audioRef} src={voiceFile.dataUrl} preload="metadata" />
+      <audio ref={audioRef} src={voiceFileUrl} preload="metadata" />
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">
-            {voiceFile.name}
+            {voiceFileName}
           </p>
           <p className="text-xs text-gray-500">
-            {formatFileSize(voiceFile.size)} " {voiceFile.type.split("/")[1]?.toUpperCase()}
+            {fileSize > 0 && formatFileSize(fileSize)} {fileType && " · " + fileType.split("/")[1]?.toUpperCase()}
           </p>
         </div>
         <button

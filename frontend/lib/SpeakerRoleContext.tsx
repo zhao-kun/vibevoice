@@ -1,127 +1,218 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { SpeakerRole, VoiceFile } from "@/types/speaker";
+import { SpeakerRole } from "@/types/speaker";
+import { api } from "@/lib/api";
+import type { Speaker } from "@/lib/api";
 
 interface SpeakerRoleContextType {
   speakerRoles: SpeakerRole[];
-  addSpeakerRole: () => void;
-  updateSpeakerRole: (id: string, updates: Partial<SpeakerRole>) => void;
-  deleteSpeakerRole: (id: string) => void;
-  uploadVoiceFile: (id: string, file: File) => Promise<void>;
-  removeVoiceFile: (id: string) => void;
-  saveSpeakerRoles: () => void;
+  addSpeakerRole: () => Promise<void>;
+  updateSpeakerRole: (speakerId: string, updates: Partial<SpeakerRole>) => Promise<void>;
+  deleteSpeakerRole: (speakerId: string) => Promise<void>;
+  uploadVoiceFile: (speakerId: string, file: File) => Promise<void>;
+  removeVoiceFile: (speakerId: string) => Promise<void>;
   hasUnsavedChanges: boolean;
+  loading: boolean;
+  error: string | null;
 }
 
 const SpeakerRoleContext = createContext<SpeakerRoleContextType | undefined>(undefined);
 
 export function SpeakerRoleProvider({ children, projectId }: { children: React.ReactNode; projectId: string }) {
   const [speakerRoles, setSpeakerRoles] = useState<SpeakerRole[]>([]);
-  const [savedSpeakerRoles, setSavedSpeakerRoles] = useState<SpeakerRole[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Generate speaker ID based on index
-  const generateSpeakerId = (index: number): string => {
-    return `Speaker ${index + 1}`;
+  // Convert backend Speaker to frontend SpeakerRole
+  const backendToFrontend = (speaker: Speaker): SpeakerRole => {
+    return {
+      id: speaker.speaker_id, // Use speaker_id as the unique identifier
+      speakerId: speaker.speaker_id,
+      name: speaker.name,
+      description: speaker.description,
+      voiceFilename: speaker.voice_filename,
+      voiceFile: null, // File uploads handled separately
+      createdAt: speaker.created_at,
+      updatedAt: speaker.updated_at,
+    };
   };
 
-  // Reindex all speaker IDs to maintain sequential order
-  const reindexSpeakerRoles = (roles: SpeakerRole[]): SpeakerRole[] => {
-    return roles.map((role, index) => ({
-      ...role,
-      speakerId: generateSpeakerId(index),
-    }));
-  };
-
-  // Load speaker roles from localStorage on mount
+  // Load speaker roles from backend on mount and when projectId changes
   useEffect(() => {
-    const storageKey = `vibevoice_speaker_roles_${projectId}`;
-    const saved = localStorage.getItem(storageKey);
+    const loadSpeakers = async () => {
+      if (!projectId) return;
 
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setSpeakerRoles(parsed);
-      setSavedSpeakerRoles(JSON.parse(JSON.stringify(parsed))); // Deep copy
-    } else {
-      // Initialize with one empty speaker role
-      const defaultRole: SpeakerRole = {
-        id: `role-${Date.now()}`,
-        speakerId: "Speaker 1",
-        description: "",
-        voiceFile: null,
-      };
-      setSpeakerRoles([defaultRole]);
-      setSavedSpeakerRoles([defaultRole]);
-    }
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await api.listSpeakers(projectId);
+        const roles = response.speakers.map(backendToFrontend);
+        setSpeakerRoles(roles);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to load speakers";
+        setError(errorMessage);
+        console.error("Error loading speakers:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSpeakers();
   }, [projectId]);
 
-  // Check for unsaved changes
-  useEffect(() => {
-    const hasChanges = JSON.stringify(speakerRoles) !== JSON.stringify(savedSpeakerRoles);
-    setHasUnsavedChanges(hasChanges);
-  }, [speakerRoles, savedSpeakerRoles]);
+  const addSpeakerRole = async (): Promise<void> => {
+    setError(null);
 
-  const addSpeakerRole = () => {
+    // Create a local-only speaker role (not synced to backend yet)
+    // It will be created on the backend when the user uploads a voice file
     const newRole: SpeakerRole = {
-      id: `role-${Date.now()}`,
-      speakerId: generateSpeakerId(speakerRoles.length),
+      id: `temp-${Date.now()}`, // Temporary ID
+      speakerId: `Speaker ${speakerRoles.length + 1}`,
+      name: `Speaker ${speakerRoles.length + 1}`,
       description: "",
+      voiceFilename: null,
       voiceFile: null,
     };
+
     setSpeakerRoles([...speakerRoles, newRole]);
   };
 
-  const updateSpeakerRole = (id: string, updates: Partial<SpeakerRole>) => {
+  const updateSpeakerRole = async (speakerId: string, updates: Partial<SpeakerRole>): Promise<void> => {
+    setError(null);
+
+    // Update local state immediately for better UX
     setSpeakerRoles(roles =>
       roles.map(role =>
-        role.id === id ? { ...role, ...updates } : role
+        role.speakerId === speakerId ? { ...role, ...updates } : role
       )
     );
+
+    // Check if this is a temporary speaker
+    const role = speakerRoles.find(r => r.speakerId === speakerId);
+    if (!role) {
+      throw new Error("Speaker not found");
+    }
+
+    // Only sync to backend if it's not a temporary speaker and name or description changed
+    if (!role.id.startsWith('temp-') && (updates.name !== undefined || updates.description !== undefined)) {
+      try {
+        const updateData: { name?: string; description?: string } = {};
+        if (updates.name !== undefined) updateData.name = updates.name;
+        if (updates.description !== undefined) updateData.description = updates.description;
+
+        const updatedSpeaker = await api.updateSpeaker(projectId, speakerId, updateData);
+
+        // Update with backend response
+        setSpeakerRoles(roles =>
+          roles.map(role =>
+            role.speakerId === speakerId ? backendToFrontend(updatedSpeaker) : role
+          )
+        );
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to update speaker";
+        setError(errorMessage);
+        throw err;
+      }
+    }
   };
 
-  const deleteSpeakerRole = (id: string) => {
-    const updatedRoles = speakerRoles.filter(role => role.id !== id);
-    // Reindex speaker IDs after deletion
-    const reindexedRoles = reindexSpeakerRoles(updatedRoles);
-    setSpeakerRoles(reindexedRoles);
+  const deleteSpeakerRole = async (speakerId: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Find the speaker to check if it's temporary
+      const role = speakerRoles.find(r => r.speakerId === speakerId);
+      if (!role) {
+        throw new Error("Speaker not found");
+      }
+
+      // If it's a temporary speaker, just remove it from local state
+      if (role.id.startsWith('temp-')) {
+        setSpeakerRoles(speakerRoles.filter(r => r.speakerId !== speakerId));
+      } else {
+        // Delete from backend
+        await api.deleteSpeaker(projectId, speakerId);
+
+        // Reload all speakers to get updated speaker_ids (backend auto-reindexes)
+        const response = await api.listSpeakers(projectId);
+        const roles = response.speakers.map(backendToFrontend);
+        setSpeakerRoles(roles);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to delete speaker";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const uploadVoiceFile = async (id: string, file: File): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+  const uploadVoiceFile = async (speakerId: string, file: File): Promise<void> => {
+    setLoading(true);
+    setError(null);
 
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        const voiceFile: VoiceFile = {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrl,
-          uploadedAt: new Date().toISOString(),
-        };
+    try {
+      // Get current speaker data
+      const currentRole = speakerRoles.find(r => r.speakerId === speakerId);
+      if (!currentRole) {
+        throw new Error("Speaker not found");
+      }
 
-        updateSpeakerRole(id, { voiceFile });
-        resolve();
-      };
+      // Check if this is a temporary speaker (not yet created on backend)
+      const isTemporary = currentRole.id.startsWith('temp-');
 
-      reader.onerror = () => {
-        reject(new Error("Failed to read file"));
-      };
+      if (isTemporary) {
+        // Create a new speaker on the backend
+        await api.createSpeaker(projectId, {
+          name: currentRole.name,
+          description: currentRole.description,
+          voice_file: file,
+        });
+      } else {
+        // Backend doesn't support updating voice files directly
+        // We need to delete the old speaker and create a new one
+        // This will trigger auto-reindexing
 
-      reader.readAsDataURL(file);
-    });
+        // Step 1: Delete the existing speaker
+        await api.deleteSpeaker(projectId, speakerId);
+
+        // Step 2: Create a new speaker with the same data but new voice file
+        await api.createSpeaker(projectId, {
+          name: currentRole.name,
+          description: currentRole.description,
+          voice_file: file,
+        });
+      }
+
+      // Step 3: Reload all speakers to get updated speaker_ids
+      const response = await api.listSpeakers(projectId);
+      const roles = response.speakers.map(backendToFrontend);
+      setSpeakerRoles(roles);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to upload voice file";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const removeVoiceFile = (id: string) => {
-    updateSpeakerRole(id, { voiceFile: null });
-  };
+  const removeVoiceFile = async (speakerId: string): Promise<void> => {
+    setError(null);
 
-  const saveSpeakerRoles = () => {
-    const storageKey = `vibevoice_speaker_roles_${projectId}`;
-    localStorage.setItem(storageKey, JSON.stringify(speakerRoles));
-    setSavedSpeakerRoles(JSON.parse(JSON.stringify(speakerRoles))); // Deep copy
-    setHasUnsavedChanges(false);
+    // For now, just update local state
+    // Backend doesn't have a separate endpoint to remove voice file
+    // User would need to delete and recreate the speaker
+    setSpeakerRoles(roles =>
+      roles.map(role =>
+        role.speakerId === speakerId ? { ...role, voiceFilename: null, voiceFile: null } : role
+      )
+    );
+    setHasUnsavedChanges(true);
   };
 
   return (
@@ -133,8 +224,9 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
         deleteSpeakerRole,
         uploadVoiceFile,
         removeVoiceFile,
-        saveSpeakerRoles,
         hasUnsavedChanges,
+        loading,
+        error,
       }}
     >
       {children}

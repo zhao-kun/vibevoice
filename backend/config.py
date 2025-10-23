@@ -12,10 +12,10 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
 
     # CORS
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',')
 
     # Workspace settings
-    WORKSPACE_DIR = Path(os.environ.get('WORKSPACE_DIR', './workspace'))
+    WORKSPACE_DIR = Path(os.environ.get('WORKSPACE_DIR', './workspace')).resolve()
     PROJECTS_META_FILE = 'projects.json'
 
     # Upload settings
