@@ -2,6 +2,14 @@
  * Backend API client for VibeVoice
  */
 
+import type {
+  Generation,
+  CreateGenerationRequest,
+  CreateGenerationResponse,
+  CurrentGenerationResponse,
+  ListGenerationsResponse
+} from '@/types/generation';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
 
 export interface Project {
@@ -246,6 +254,30 @@ class ApiClient {
 
   getSessionDownloadUrl(projectId: string, sessionId: string): string {
     return `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/download`;
+  }
+
+  // ============ Generations API ============
+
+  async createGeneration(
+    projectId: string,
+    data: CreateGenerationRequest
+  ): Promise<CreateGenerationResponse> {
+    return this.fetch(`/projects/${encodeURIComponent(projectId)}/generations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCurrentGeneration(): Promise<CurrentGenerationResponse> {
+    return this.fetch('/projects/generations/current');
+  }
+
+  async listGenerations(projectId: string): Promise<ListGenerationsResponse> {
+    return this.fetch(`/projects/${encodeURIComponent(projectId)}/generations`);
+  }
+
+  getGenerationDownloadUrl(projectId: string, requestId: string): string {
+    return `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(requestId)}/download`;
   }
 }
 

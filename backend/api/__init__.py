@@ -17,4 +17,4 @@ def ping():
 from backend.api import projects  # noqa: F401, E402
 from backend.api import speakers  # noqa: F401, E402
 from backend.api import dialog_sessions  # noqa: F401, E402
-# from backend.api import generation  # To be implemented
+from backend.api import generation  # noqa: F401, E402

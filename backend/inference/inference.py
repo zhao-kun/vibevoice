@@ -10,7 +10,7 @@ from pathlib import Path
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalInference, VibeVoiceGenerationOutput
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
-from config.configuration_vibevoice import VibeVoiceConfig, DEFAULT_CONFIG
+from config.configuration_vibevoice import DEFAULT_CONFIG, VibeVoiceConfig
 from backend.models.generation import Generation, InferencePhase, UpdateStatusCallable
 from backend.services.speaker_service import SpeakerService
 from backend.services.dialog_session_service import DialogSessionService

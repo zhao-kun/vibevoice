@@ -89,14 +89,14 @@ def get_current_generation():
     Args:
         project_id: Project identifier
     Returns:
-        JSON response with current generation status
+        JSON response with current generation status (200 with null if none active)
     """
     generation: Generation = gm.get_current_generation()
     if not generation:
         return jsonify({
-            'error': 'No active generation',
-            'message': 'There is no active voice generation at the moment'
-        }), 404
+            'message': 'No active generation at the moment',
+            'generation': None
+        }), 200
 
     return jsonify({
         'message': 'Current generation status retrieved successfully',

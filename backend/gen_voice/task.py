@@ -76,7 +76,8 @@ class Manager:
                     self.task.inference.generation.status = InferencePhase.FAILED
                     logger.error(f"generation id{self.task.inference.generation.request_id} running failed,")
             finally:
-                self.task._update_metadata(self.task.inference.generation.to_dict())
+                if self.task is not None:
+                    self.task._update_metadata(self.task.inference.generation.to_dict())
                 self.task = None
 
             sleep(0.5)
