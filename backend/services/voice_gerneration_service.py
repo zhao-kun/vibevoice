@@ -1,12 +1,13 @@
+import threading
 
 from typing import List, Dict, Any, Optional
-
 from pathlib import Path
 from utils.file_handler import FileHandler
 from backend.services.speaker_service import SpeakerService
 from backend.services.dialog_session_service import DialogSessionService
 from backend.models.generation import Generation
-
+from backend.gen_voice.task import Task, gm
+from backend.inference.inference import InferenceBase
 class VoiceGenerationService:
 
     GENERATION_META_FILE = 'generation.json'
@@ -61,8 +62,20 @@ class VoiceGenerationService:
             self.file_handler.write_json(self.meta_file_path, generations)
         except Exception as e:
             raise RuntimeError(f"Failed to save generation metadata: {str(e)}")
+    
+    def list_generations(self) -> List[Generation]:
+        """
+        List all generations for the project
 
-    def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42) -> Generation:
+        Returns:
+            List of Generation objects
+        """
+        metadata = self._load_metadata()
+        return [Generation.from_dict(data) for data in metadata]
+
+    def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42,
+                   cfg_scale: float = 1.3, model_dtype: str = "float8_e4m3fn",
+                   attn_implementation: str = "sdpa") -> Generation:
         """
         Generate voices for a specific dialog session
 
@@ -76,18 +89,16 @@ class VoiceGenerationService:
             raise ValueError(f"Dialog session with ID '{dialog_session_id}' not found")
 
         # Placeholder for actual voice generation logic
-        generation = Generation.create(request_id, dialog_session_id, seeds)
+        generation = Generation.create(request_id, dialog_session_id, 
+                                       seeds=seeds,
+                                       cfg_scale=cfg_scale,
+                                       model_dtype=model_dtype,
+                                       attn_implementation=attn_implementation)
+        inference = InferenceBase.create(generation, self.speaker_service,
+                                         self.dialog_service, self.meta_file_path)
 
-        # Load existing metadata
-        generations = self._load_metadata()
-        generations.append(generation.to_dict())
-        # Save updated metadata
-        self._save_metadata(generations)
-        try:
-            pass
-        finally:
-            self._save_metadata(generations)
+        task = Task.from_inference(inference=inference,
+                                   file_handler=self.file_handler,
+                                   meta_file_path=str(self.meta_file_path))
 
-        return generation
-
-
+        return generation if gm.add_inference_task(task) else None
