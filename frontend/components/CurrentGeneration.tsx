@@ -58,6 +58,157 @@ export default function CurrentGeneration() {
     ? (currentStep / totalSteps) * 100
     : currentGeneration.percentage;
 
+  // Render phase-specific details
+  const renderPhaseDetails = () => {
+    const details = currentGeneration.details;
+
+    // PREPROCESSING phase
+    if (currentGeneration.status === InferencePhase.PREPROCESSING && details) {
+      return (
+        <div className="space-y-3">
+          <label className="text-sm font-medium opacity-75 block">Preprocessing Information</label>
+
+          {details.unique_speaker_names && (
+            <div className="bg-white bg-opacity-50 rounded p-3">
+              <p className="text-xs font-medium mb-1">Speakers ({details.unique_speaker_names.length})</p>
+              <div className="flex flex-wrap gap-1">
+                {details.unique_speaker_names.map((speaker: string, idx: number) => (
+                  <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
+                    {speaker}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {details.scripts && (
+            <div className="bg-white bg-opacity-50 rounded p-3">
+              <p className="text-xs font-medium mb-1">Dialog Lines: {details.scripts.length}</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // SAVING_AUDIO or COMPLETE phase
+    if ((currentGeneration.status === InferencePhase.SAVING_AUDIO ||
+         currentGeneration.status === InferencePhase.COMPLETE) && details) {
+      return (
+        <div className="space-y-3">
+          <label className="text-sm font-medium opacity-75 block">Generation Statistics</label>
+
+          {/* Token Statistics */}
+          <div className="bg-white bg-opacity-50 rounded p-3">
+            <p className="text-xs font-medium mb-2">Token Statistics</p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              {details.prefilling_tokens !== undefined && (
+                <div>
+                  <p className="opacity-75">Prefilling</p>
+                  <p className="font-semibold">{details.prefilling_tokens.toLocaleString()}</p>
+                </div>
+              )}
+              {details.generated_tokens !== undefined && (
+                <div>
+                  <p className="opacity-75">Generated</p>
+                  <p className="font-semibold">{details.generated_tokens.toLocaleString()}</p>
+                </div>
+              )}
+              {details.total_tokens !== undefined && (
+                <div>
+                  <p className="opacity-75">Total</p>
+                  <p className="font-semibold">{details.total_tokens.toLocaleString()}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Audio Statistics */}
+          <div className="bg-white bg-opacity-50 rounded p-3">
+            <p className="text-xs font-medium mb-2">Audio Output</p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {details.audio_duration_seconds !== undefined && (
+                <div>
+                  <p className="opacity-75">Duration</p>
+                  <p className="font-semibold">{details.audio_duration_seconds.toFixed(2)}s</p>
+                </div>
+              )}
+              {details.generation_time !== undefined && (
+                <div>
+                  <p className="opacity-75">Generation Time</p>
+                  <p className="font-semibold">{details.generation_time.toFixed(2)}s</p>
+                </div>
+              )}
+              {details.real_time_factor !== undefined && (
+                <div>
+                  <p className="opacity-75">Real-Time Factor</p>
+                  <p className="font-semibold">{details.real_time_factor.toFixed(2)}x</p>
+                </div>
+              )}
+              {details.number_of_segments !== undefined && (
+                <div>
+                  <p className="opacity-75">Segments</p>
+                  <p className="font-semibold">{details.number_of_segments}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Speaker Information */}
+          {details.unique_speaker_names && (
+            <div className="bg-white bg-opacity-50 rounded p-3">
+              <p className="text-xs font-medium mb-1">Speakers Used ({details.unique_speaker_names.length})</p>
+              <div className="flex flex-wrap gap-1">
+                {details.unique_speaker_names.map((speaker: string, idx: number) => (
+                  <span key={idx} className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                    {speaker}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Output File Path */}
+          {details.output_audio_path && (
+            <div className="bg-white bg-opacity-50 rounded p-3">
+              <p className="text-xs font-medium mb-1">Output File</p>
+              <p className="text-xs font-mono break-all">{details.output_audio_path}</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // FAILED phase
+    if (currentGeneration.status === InferencePhase.FAILED && details) {
+      return (
+        <div className="space-y-3">
+          <label className="text-sm font-medium opacity-75 block">Error Information</label>
+          <div className="bg-red-50 bg-opacity-50 rounded p-3">
+            <pre className="text-xs whitespace-pre-wrap text-red-900">
+              {details.error || JSON.stringify(details, null, 2)}
+            </pre>
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback for any other details
+    if (details && Object.keys(details).length > 0) {
+      return (
+        <div className="space-y-3">
+          <label className="text-sm font-medium opacity-75 block">Additional Details</label>
+          <div className="bg-white bg-opacity-50 rounded p-3 max-h-48 overflow-y-auto">
+            <pre className="text-xs whitespace-pre-wrap">
+              {JSON.stringify(details, null, 2)}
+            </pre>
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className={`border-2 rounded-lg p-6 ${getStatusColor(currentGeneration.status)}`}>
       <div className="flex items-center justify-between mb-4">
@@ -131,17 +282,8 @@ export default function CurrentGeneration() {
           </div>
         </div>
 
-        {/* Additional Details */}
-        {Object.keys(currentGeneration.details).length > 0 && (
-          <div>
-            <label className="text-sm font-medium opacity-75 mb-2 block">Details</label>
-            <div className="bg-white bg-opacity-50 rounded p-3 max-h-48 overflow-y-auto">
-              <pre className="text-xs whitespace-pre-wrap">
-                {JSON.stringify(currentGeneration.details, null, 2)}
-              </pre>
-            </div>
-          </div>
-        )}
+        {/* Phase-Specific Details */}
+        {renderPhaseDetails()}
 
         {/* Timestamps */}
         <div className="text-xs opacity-75 pt-2 border-t border-current border-opacity-20">

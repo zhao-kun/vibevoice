@@ -8,13 +8,14 @@ from dataclasses import dataclass
 
 logger = logging.get_logger(__name__)
 
-class InferencePhase(Enum):
-    PENDING = 'pending'
-    PREPROCESSING = 'preprocessing'
-    INFERENCING = 'inferencing'
-    SAVING_AUDIO = 'saving_audio'
-    COMPLETE = 'complete'
-    FAILED = 'failed'
+class InferencePhase:
+    PENDING: str = 'Pending'
+    PREPROCESSING: str = 'Preprocessing'
+    INFERENCING: str = 'Inferencing'
+    SAVING_AUDIO: str = 'Saving_audio'
+    FAILED: str = 'Failed'
+    COMPLETED: str = 'Completed'
+
 @dataclass
 class QwenConfig:
     """

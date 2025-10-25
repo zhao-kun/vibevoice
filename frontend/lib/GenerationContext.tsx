@@ -112,14 +112,20 @@ export function GenerationProvider({ children, projectId }: GenerationProviderPr
       currentGeneration.status
     );
 
-    if (!isActive) return;
+    if (!isActive) {
+      // If generation is complete/failed, refresh the history list once
+      fetchGenerations();
+      return;
+    }
 
     const interval = setInterval(() => {
       fetchCurrentGeneration();
+      // Also refresh history periodically to keep it up to date
+      fetchGenerations();
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [currentGeneration, fetchCurrentGeneration]);
+  }, [currentGeneration, fetchCurrentGeneration, fetchGenerations]);
 
   const value: GenerationContextType = {
     generations,

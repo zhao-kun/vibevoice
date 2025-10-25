@@ -93,9 +93,11 @@ class VoiceGenerationService:
                                        seeds=seeds,
                                        cfg_scale=cfg_scale,
                                        model_dtype=model_dtype,
-                                       attn_implementation=attn_implementation)
+                                       attn_implementation=attn_implementation,
+                                       project_dir=str(self.output_dir))
         inference = InferenceBase.create(generation, self.speaker_service,
-                                         self.dialog_service, self.meta_file_path)
+                                         self.dialog_service, self.meta_file_path,
+                                         fake=True)
 
         task = Task.from_inference(inference=inference,
                                    file_handler=self.file_handler,

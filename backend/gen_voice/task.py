@@ -4,8 +4,11 @@ from time import sleep
 from typing import Any, Dict, List
 from transformers.utils import logging
 from backend.inference.inference import InferenceBase
+from backend.models.generation import Generation
 from config.configuration_vibevoice import InferencePhase
 from utils.file_handler import FileHandler
+from pathlib import Path
+
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
@@ -46,7 +49,7 @@ class Task:
             generations: List of generation dictionaries
         """
         try:
-            self.file_handler.write_json(self.meta_file_path, generations)
+            self.file_handler.write_json(Path(self.meta_file_path), generations)
         except Exception as e:
             raise RuntimeError(f"Failed to save generation metadata: {str(e)}")
 
@@ -71,13 +74,16 @@ class Manager:
                     self.task.inference.run_inference(status_update=self.task.inference.generation.update_status)
                     self.task.inference.generation.status = InferencePhase.COMPLETED
             except Exception as e:
-                logger.error(f"TaskManager task_run_loop error: {e}")
+                logger.error("TaskManager task_run_loop error:", exc_info=e)
                 if self.task is not None:
                     self.task.inference.generation.status = InferencePhase.FAILED
                     logger.error(f"generation id{self.task.inference.generation.request_id} running failed,")
             finally:
-                if self.task is not None:
-                    self.task._update_metadata(self.task.inference.generation.to_dict())
+                try:
+                    if self.task is not None:
+                        self.task._update_metadata(self.task.inference.generation.to_dict())
+                except Exception as e:
+                    logger.error("Failed to update metadata:", exc_info=e)
                 self.task = None
 
             sleep(0.5)
@@ -95,9 +101,9 @@ class Manager:
                            f"inference {self.task.inference.generation.request_id} is in progress")
             return False
 
-    def get_current_generation(self) -> Dict[str, Any]:
+    def get_current_generation(self) -> Generation:
         if self.task is not None and self.task.inference is not None:
-            return self.task.inference.generation.to_dict()
+            return self.task.inference.generation
         return None
 
 

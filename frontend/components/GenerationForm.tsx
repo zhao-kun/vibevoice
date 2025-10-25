@@ -73,7 +73,7 @@ export default function GenerationForm() {
   };
 
   return (
-    <div className="border rounded-lg p-6">
+    <div className="border border-gray-300 rounded-lg p-6 bg-white">
       <h2 className="text-xl font-semibold mb-4">Start New Generation</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">

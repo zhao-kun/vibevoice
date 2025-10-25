@@ -31,12 +31,13 @@ class FakeModel:
 
 class InferenceBase(ABC):
     def __init__(self, generation: Generation, speaker_service: SpeakerService,
-                 dialog_service: DialogSessionService):
+                 dialog_service: DialogSessionService, meta_file_path: str):
         self.generation = generation
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.speaker_service = speaker_service
         self.dialog_service = dialog_service
-        self.model_file = current_app.config['MODEL_FILE_PATH']
+        self.model_file = current_app.config['MODEL_PATH']
+        self.meta_file_path = meta_file_path
 
     @staticmethod
     def create(generation: Generation, speaker_service: SpeakerService,
@@ -61,7 +62,7 @@ class InferenceBase(ABC):
 
         get_generator(self.generation.seeds)
 
-        txt_content, scripts, unique_speaker_names = self.dialog_service.parse_session_txt_script(self.generation.dialog_session_id)
+        txt_content, scripts, unique_speaker_names = self.dialog_service.parse_session_txt_script(self.generation.session_id)
         if not scripts or not unique_speaker_names:
             raise RuntimeError("No scripts, speaker_numbers found for the specified dialog session.")
 
@@ -85,7 +86,8 @@ class InferenceBase(ABC):
                            return_attention_mask=True)
 
         for k, v in inputs.items():
-            inputs[k] = v.to(self.device)
+            if torch.is_tensor(v):
+                inputs[k] = v.to(self.device)
 
         load_dtype = torch.bfloat16
         if self.generation.model_dtype == "float8_e4m3fn":
@@ -105,9 +107,10 @@ class InferenceBase(ABC):
                                  verbose=True,
                                  status_update=status_update)
         generation_time = time.time() - start_time
-        self.save_audio(outputs, processor, status_update, generation_time, inputs['input_ids'].shape[1],
-                        unique_speaker_names=unique_speaker_names,
-                        number_of_segments=len(scripts))
+        self._save_audio(outputs, processor, status_update, generation_time, 
+                         inputs['input_ids'].shape[1],
+                         unique_speaker_names=unique_speaker_names,
+                         number_of_segments=len(scripts))
 
 
 class InferenceEngine(InferenceBase):
@@ -153,7 +156,7 @@ class InferenceEngine(InferenceBase):
 
 
         # Save output (processor handles device internally)
-        output_audio_path = current_app.config['AUDIO_OUTPUT_DIR'] / Path(self.generation.output_filename)
+        output_audio_path = Path(self.generation.project_dir) / f"{self.generation.request_id}.wav"
         processor.save_audio(outputs.speech_outputs[0], output_path=output_audio_path)
 
         status_update(InferencePhase.SAVING_AUDIO,
@@ -180,7 +183,7 @@ class FakeInferenceEngine(InferenceBase):
                     generation_time: float, input_tokens: int, **kwargs) -> None:
         base64_wav_audio = "UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA"  # Fake short audio for test
         audio_data = base64.b64decode(base64_wav_audio)
-        output_audio_path = current_app.config['AUDIO_OUTPUT_DIR'] / Path(self.generation.output_filename)
+        output_audio_path = Path(self.generation.project_dir) / f"{self.generation.request_id}.wav"
         with open(output_audio_path, 'wb') as f:
             f.write(audio_data)
         status_update(InferencePhase.SAVING_AUDIO,
