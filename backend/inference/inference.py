@@ -1,5 +1,4 @@
-import os
-import re
+import base64
 from typing import Union
 import time
 import torch
@@ -54,7 +53,8 @@ class InferenceBase(ABC):
 
     @abstractmethod
     def _save_audio(self, outputs: Union[torch.LongTensor, VibeVoiceGenerationOutput],
-                    processor: VibeVoiceProcessor, update_status: UpdateStatusCallable) -> None:
+                    processor: VibeVoiceProcessor, update_status: UpdateStatusCallable,
+                    generation_time: float, input_tokens: int, **kwargs) -> None:
         pass
 
     def run_inference(self, status_update: UpdateStatusCallable = lambda phase, *args, **kwargs: None):
@@ -103,9 +103,10 @@ class InferenceBase(ABC):
                                  tokenizer=processor.tokenizer,
                                  generation_config={'do_sample': False},
                                  verbose=True)
-
-        status_update(InferencePhase.SAVING_AUDIO, generation_time=f"{time.time() - start_time:.2f} seconds")
-        self.save_audio(outputs, processor, status_update)
+        generation_time = time.time() - start_time
+        self.save_audio(outputs, processor, status_update, generation_time, inputs['input_ids'].shape[1],
+                        unique_speaker_names=unique_speaker_names,
+                        number_of_segments=len(scripts))
 
 
 class InferenceEngine(InferenceBase):
@@ -134,6 +135,37 @@ class InferenceEngine(InferenceBase):
         model.eval()
         return model
 
+    def _save_audio(self, outputs: Union[torch.LongTensor, VibeVoiceGenerationOutput],
+                    processor: VibeVoiceProcessor, status_update: UpdateStatusCallable,
+                    generation_time: float, input_tokens: int, **kwargs) -> None:
+        if outputs.speech_outputs is None or len(outputs.speech_outputs) == 0:
+            raise RuntimeError("No audio output generated.")
+
+        sample_rate = 24000
+        audio_samples = outputs.speech_outputs[0].shape[-1] \
+            if len(outputs.speech_outputs[0].shape) > 0 else len(outputs.speech_outputs[0])
+        audio_duration = audio_samples / sample_rate
+        rtf = generation_time / audio_duration if audio_duration > 0 else float('inf')
+
+        output_tokens = outputs.sequences.shape[1]  # Total tokens (input + generated)
+        generated_tokens = output_tokens - input_tokens
+
+
+        # Save output (processor handles device internally)
+        output_audio_path = current_app.config['AUDIO_OUTPUT_DIR'] / Path(self.generation.output_filename)
+        processor.save_audio(outputs.speech_outputs[0], output_path=output_audio_path)
+
+        status_update(InferencePhase.SAVING_AUDIO,
+                      output_audio_path=str(output_audio_path),
+                      generation_time=generation_time,
+                      prefilling_tokens=input_tokens,
+                      total_tokens=output_tokens,
+                      generated_tokens=generated_tokens,
+                      audio_duration_seconds=audio_duration,
+                      real_time_factor=rtf,
+                      **kwargs)
+        logger.info(f"Saving generated audio to {output_audio_path}")
+        return
 
 class FakeInferenceEngine(InferenceBase):
     def __init__(self, generation, speaker_service, dialog_service, meta_file_path: str):
@@ -142,10 +174,23 @@ class FakeInferenceEngine(InferenceBase):
     def _load_model(self, dtype: torch.dtype, config: str = None):
         return FakeModel()
 
-    def _save_audio(self, outputs: Union[torch.LongTensor, VibeVoiceGenerationOutput], 
-                    processor: VibeVoiceProcessor, status_update: UpdateStatusCallable) -> None:
+    def _save_audio(self, outputs: Union[torch.LongTensor, VibeVoiceGenerationOutput],
+                    processor: VibeVoiceProcessor, status_update: UpdateStatusCallable,
+                    generation_time: float, input_tokens: int, **kwargs) -> None:
+        base64_wav_audio = "UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA"  # Fake short audio for test
+        audio_data = base64.b64decode(base64_wav_audio)
         output_audio_path = current_app.config['AUDIO_OUTPUT_DIR'] / Path(self.generation.output_filename)
-        status_update(InferencePhase.SAVING_AUDIO, output_audio_path=str(output_audio_path))
+        with open(output_audio_path, 'wb') as f:
+            f.write(audio_data)
+        status_update(InferencePhase.SAVING_AUDIO,
+                      output_audio_path=str(output_audio_path),
+                      prefilling_tokens=input_tokens,
+                      generation_time=generation_time,
+                      total_tokens=1024,                        # fake value
+                      generated_tokens=1024,                    # fake value
+                      audio_duration_seconds=5.0,               # fake value
+                      real_time_factor=1.0,                     # fake value
+                      **kwargs
+                      )
         logger.info(f"Saving generated audio to {output_audio_path}")
         return
-
