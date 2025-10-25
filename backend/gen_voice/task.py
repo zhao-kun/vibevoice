@@ -4,7 +4,7 @@ from time import sleep
 from typing import Any, Dict, List
 from transformers.utils import logging
 from backend.inference.inference import InferenceBase
-from backend.models.generation import InferencePhase
+from config.configuration_vibevoice import InferencePhase
 from utils.file_handler import FileHandler
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)

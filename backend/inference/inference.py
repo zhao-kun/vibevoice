@@ -9,8 +9,8 @@ from pathlib import Path
 from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalInference, VibeVoiceGenerationOutput
 from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 from transformers.utils import logging
-from config.configuration_vibevoice import DEFAULT_CONFIG, VibeVoiceConfig
-from backend.models.generation import Generation, InferencePhase, UpdateStatusCallable
+from config.configuration_vibevoice import DEFAULT_CONFIG, VibeVoiceConfig, InferencePhase
+from backend.models.generation import Generation, UpdateStatusCallable
 from backend.services.speaker_service import SpeakerService
 from backend.services.dialog_session_service import DialogSessionService
 from util.rand_init import get_generator
@@ -22,10 +22,10 @@ class FakeModel:
     def __init__(self):
         pass
 
-    def generate(self, update_status: UpdateStatusCallable, **kwargs) -> Union[torch.LongTensor, VibeVoiceGenerationOutput]:
+    def generate(self, **kwargs) -> Union[torch.LongTensor, VibeVoiceGenerationOutput]:
         for i in range(100):
             time.sleep(0.5)  # Simulate some processing time
-            update_status(InferencePhase.INFERENCING, current=i + 1, total_step=100)
+            kwargs.get("status_update", lambda phase, **kwargs: None)(InferencePhase.INFERENCING, current=i + 1, total_step=100)
 
         return torch.randn(1, 16000 * 5)  # Simulate 5 seconds of audio at 16kHz
 
@@ -102,7 +102,8 @@ class InferenceBase(ABC):
                                  cfg_scale=self.generation.cfg_scale,
                                  tokenizer=processor.tokenizer,
                                  generation_config={'do_sample': False},
-                                 verbose=True)
+                                 verbose=True,
+                                 status_update=status_update)
         generation_time = time.time() - start_time
         self.save_audio(outputs, processor, status_update, generation_time, inputs['input_ids'].shape[1],
                         unique_speaker_names=unique_speaker_names,
