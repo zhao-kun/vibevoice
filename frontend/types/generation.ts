@@ -4,13 +4,14 @@
 
 /**
  * Inference phase enum matching backend InferencePhase
+ * Note: Backend currently returns lowercase values
  */
 export enum InferencePhase {
   PENDING = 'pending',
   PREPROCESSING = 'preprocessing',
   INFERENCING = 'inferencing',
   SAVING_AUDIO = 'saving_audio',
-  COMPLETE = 'complete',
+  COMPLETED = 'completed',
   FAILED = 'failed'
 }
 

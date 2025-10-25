@@ -149,13 +149,16 @@ def get_all_generations(project_id):
 @api_bp.route('/projects/<project_id>/generations/<request_id>/download', methods=['GET'])
 def download_generation_audio(project_id: str, request_id: str):
     """
-    Download the generated audio file for a specific generation
+    Download or stream the generated audio file for a specific generation
+
+    Query parameters:
+        - download: If set to 'true', force download. Otherwise, serve inline for playback.
 
     Args:
         project_id: Project identifier
         request_id: Generation request identifier
     Returns:
-        Audio file as attachment or error message
+        Audio file (inline or as attachment) or error message
     """
     try:
         # Get project service to find project directory
@@ -191,7 +194,16 @@ def download_generation_audio(project_id: str, request_id: str):
                 'message': f'Generated audio file for request ID "{request_id}" does not exist'
             }), 400
 
-        return send_file(str(audio_file_path), as_attachment=True)
+        # Check if download parameter is set to true
+        force_download = request.args.get('download', 'false').lower() == 'true'
+
+        # Serve inline by default (for playback), or as attachment if requested
+        return send_file(
+            str(audio_file_path),
+            mimetype='audio/wav',
+            as_attachment=force_download,
+            download_name=generation.output_filename if force_download else None
+        )
 
     except Exception as e:
         logger.error(f"Error occurred while downloading generated audio: {e}")

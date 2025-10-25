@@ -154,9 +154,12 @@ class InferenceEngine(InferenceBase):
         output_tokens = outputs.sequences.shape[1]  # Total tokens (input + generated)
         generated_tokens = output_tokens - input_tokens
 
+        # Generate output filename and set it in the generation object
+        output_filename = f"{self.generation.request_id}.wav"
+        self.generation.output_filename = output_filename
 
         # Save output (processor handles device internally)
-        output_audio_path = Path(self.generation.project_dir) / f"{self.generation.request_id}.wav"
+        output_audio_path = Path(self.generation.project_dir) / output_filename
         processor.save_audio(outputs.speech_outputs[0], output_path=output_audio_path)
 
         status_update(InferencePhase.SAVING_AUDIO,
@@ -183,7 +186,12 @@ class FakeInferenceEngine(InferenceBase):
                     generation_time: float, input_tokens: int, **kwargs) -> None:
         base64_wav_audio = "UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA"  # Fake short audio for test
         audio_data = base64.b64decode(base64_wav_audio)
-        output_audio_path = Path(self.generation.project_dir) / f"{self.generation.request_id}.wav"
+
+        # Generate output filename and set it in the generation object
+        output_filename = f"{self.generation.request_id}.wav"
+        self.generation.output_filename = output_filename
+
+        output_audio_path = Path(self.generation.project_dir) / output_filename
         with open(output_audio_path, 'wb') as f:
             f.write(audio_data)
         status_update(InferencePhase.SAVING_AUDIO,

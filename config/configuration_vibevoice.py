@@ -9,12 +9,12 @@ from dataclasses import dataclass
 logger = logging.get_logger(__name__)
 
 class InferencePhase:
-    PENDING: str = 'Pending'
-    PREPROCESSING: str = 'Preprocessing'
-    INFERENCING: str = 'Inferencing'
-    SAVING_AUDIO: str = 'Saving_audio'
-    FAILED: str = 'Failed'
-    COMPLETED: str = 'Completed'
+    PENDING: str = 'pending'
+    PREPROCESSING: str = 'preprocessing'
+    INFERENCING: str = 'inferencing'
+    SAVING_AUDIO: str = 'saving_audio'
+    FAILED: str = 'failed'
+    COMPLETED: str = 'completed'
 
 @dataclass
 class QwenConfig:
