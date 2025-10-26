@@ -15,7 +15,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
 
 from vibevoice.modular.modular_vibevoice_tokenizer import VibeVoiceTokenizerStreamingCache, VibeVoiceTokenizerEncoderOutput
-from config.configuration_vibevoice import VibeVoiceConfig
+from config.configuration_vibevoice import InferencePhase, VibeVoiceConfig
 from vibevoice.modular.modeling_vibevoice import VibeVoiceModel
 from vibevoice.modular.streamer import AudioStreamer, AsyncAudioStreamer
 from util.rand_init import get_generator
@@ -365,6 +365,8 @@ class VibeVoiceForConditionalInference(nn.Module):
         Returns:
             Generated token sequences and optionally speech outputs
         """
+        status_update = kwargs.pop("status_update", lambda phase, **kwargs: None)  # Get status update callable
+
         # 1. Handle `generation_config` and kwargs that might update it, and validate the `.generate()` call
         tokenizer = kwargs.pop("tokenizer", None)  # Pull this out first, we only use it for stopping criteria
         parsed_scripts = kwargs.pop("parsed_scripts", None)
@@ -398,6 +400,7 @@ class VibeVoiceForConditionalInference(nn.Module):
         inputs_embeds = None
         verbose = kwargs.get("verbose", False)
 
+
         # Initialize audio chunks storage for each sample
         audio_chunks = [[] for _ in range(batch_size)]
 
@@ -424,6 +427,8 @@ class VibeVoiceForConditionalInference(nn.Module):
         max_steps = min(generation_config.max_length - initial_length, int(max_length_times * initial_length))
         max_step_per_sample = torch.min(generation_config.max_length - initial_length_per_sample, (max_length_times * initial_length_per_sample).long())
         reach_max_step_sample = torch.zeros(batch_size, dtype=torch.bool, device=device)
+
+        status_update(InferencePhase.INFERENCING, current=0, total_steps=max_steps)
 
         # Create progress iterator if verbose
         if kwargs.get("show_progress_bar", True):
@@ -678,6 +683,7 @@ class VibeVoiceForConditionalInference(nn.Module):
 
                 # Update embeddings for diffusion indices
                 next_inputs_embeds[diffusion_indices] = diffusion_embeds
+                status_update(InferencePhase.INFERENCING, current=step, total_steps=max_steps)
 
             # Set inputs_embeds for next iteration
             inputs_embeds = next_inputs_embeds

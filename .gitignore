@@ -218,3 +218,14 @@ models
 *.pt
 *.swp
 outputs/
+
+# Backend
+backend/.env
+backend/uploads/
+backend/__pycache__/
+backend/**/__pycache__/
+
+!frontend/lib/
+
+# Workspace
+workspace/

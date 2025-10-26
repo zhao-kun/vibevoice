@@ -1,13 +1,20 @@
 """ VibeVoice_AcousticTokenizer model configuration"""
+from enum import Enum
+from typing import Dict, List, Optional
 
-from typing import Dict, List, Optional, Tuple
-
-from transformers.configuration_utils import PretrainedConfig 
 from transformers.utils import logging
 from dataclasses import dataclass
 
 
 logger = logging.get_logger(__name__)
+
+class InferencePhase:
+    PENDING: str = 'pending'
+    PREPROCESSING: str = 'preprocessing'
+    INFERENCING: str = 'inferencing'
+    SAVING_AUDIO: str = 'saving_audio'
+    FAILED: str = 'failed'
+    COMPLETED: str = 'completed'
 
 @dataclass
 class QwenConfig:
@@ -15,7 +22,7 @@ class QwenConfig:
     Configuration class for QWen model.
     """
     model_type = "qwen2"
-    
+
     def __init__(
         self,
         attention_dropout: float = 0.0,
@@ -65,7 +72,7 @@ class QwenConfig:
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.use_cache = use_cache
-    
+
     @classmethod
     def from_config(cls, config):
         return cls(**config.__dict__)
@@ -81,7 +88,7 @@ class VibeVoiceAcousticTokenizerConfig:
         vae_dim: int = 64,
         fix_std: float = 0.5,
         std_dist_type: str = 'gaussian',
-        # common 
+        # common
         mixer_layer: str = 'depthwise_conv',
         conv_norm: str = 'none',
         pad_mode: str = 'constant',
@@ -94,11 +101,11 @@ class VibeVoiceAcousticTokenizerConfig:
         weight_init_value: float = 1e-2,
         # encoder specific
         encoder_n_filters: int = 32,
-        encoder_ratios: Optional[List[int]] = [8,5,5,4,2,2],
+        encoder_ratios: Optional[List[int]] = [8, 5, 5, 4, 2, 2],
         encoder_depths: str = "3-3-3-3-3-3-8",
         # decoder specific
         decoder_n_filters: int = 32,
-        decoder_ratios: Optional[List[int]] = None, # if None, same as encoder
+        decoder_ratios: Optional[List[int]] = None,  # if None, same as encoder
         decoder_depths: Optional[str] = None,
         **kwargs
     ):
@@ -108,7 +115,7 @@ class VibeVoiceAcousticTokenizerConfig:
         self.vae_dim = vae_dim
         self.fix_std = fix_std
         self.std_dist_type = std_dist_type
-        
+
         # common parameters
         self.conv_norm = conv_norm
         self.pad_mode = pad_mode
@@ -125,7 +132,7 @@ class VibeVoiceAcousticTokenizerConfig:
         self.encoder_n_filters = encoder_n_filters
         self.encoder_ratios = encoder_ratios
         self.encoder_depths = encoder_depths
-        
+
         # decoder specific parameters
         self.decoder_ratios = decoder_ratios if decoder_ratios is not None else encoder_ratios
         self.decoder_n_filters = decoder_n_filters
@@ -134,7 +141,7 @@ class VibeVoiceAcousticTokenizerConfig:
 
 class VibeVoiceSemanticTokenizerConfig:
     model_type = "vibevoice_semantic_tokenizer"
-    
+
     def __init__(
         self,
         channels: int = 1,
@@ -143,7 +150,7 @@ class VibeVoiceSemanticTokenizerConfig:
         vae_dim: int = 64,
         fix_std: float = 0,
         std_dist_type: str = 'none',
-        # common 
+        # common
         mixer_layer: str = 'depthwise_conv',
         conv_norm: str = 'none',
         pad_mode: str = 'constant',
@@ -156,7 +163,7 @@ class VibeVoiceSemanticTokenizerConfig:
         weight_init_value: float = 1e-2,
         # encoder specific
         encoder_n_filters: int = 32,
-        encoder_ratios: Optional[List[int]] = [8,5,5,4,2,2],
+        encoder_ratios: Optional[List[int]] = [8, 5, 5, 4, 2, 2],
         encoder_depths: str = "3-3-3-3-3-3-8",
         **kwargs
     ):
@@ -166,7 +173,7 @@ class VibeVoiceSemanticTokenizerConfig:
         self.vae_dim = vae_dim
         self.fix_std = fix_std
         self.std_dist_type = std_dist_type
-        
+
         # common parameters
         self.conv_norm = conv_norm
         self.pad_mode = pad_mode
@@ -183,7 +190,7 @@ class VibeVoiceSemanticTokenizerConfig:
         self.encoder_n_filters = encoder_n_filters
         self.encoder_ratios = encoder_ratios
         self.encoder_depths = encoder_depths
-        
+
 
 class VibeVoiceDiffusionHeadConfig:
     model_type = "vibevoice_diffusion_head"
@@ -222,7 +229,7 @@ class VibeVoiceConfig:
     is_composition = True
     is_encoder_decoder = False
     sub_configs = {
-        "acoustic_tokenizer_config": VibeVoiceAcousticTokenizerConfig, 
+        "acoustic_tokenizer_config": VibeVoiceAcousticTokenizerConfig,
         "semantic_tokenizer_config": VibeVoiceSemanticTokenizerConfig,
         "decoder_config": QwenConfig,
         "diffusion_head_config": VibeVoiceDiffusionHeadConfig,
@@ -238,7 +245,7 @@ class VibeVoiceConfig:
         "layers.*.mlp.up_proj": "colwise",
         "layers.*.mlp.down_proj": "rowwise",
     }
-    
+
     def __init__(
         self,
         acoustic_tokenizer_config=None,
@@ -249,7 +256,7 @@ class VibeVoiceConfig:
     ):
 
         # kwargs["_attn_implementation"] = "flash_attention_2"
-        kwargs["_attn_implementation_autoset"] = False 
+        kwargs["_attn_implementation_autoset"] = False
 
         if acoustic_tokenizer_config is None:
             self.acoustic_tokenizer_config = self.sub_configs["acoustic_tokenizer_config"]()
@@ -297,7 +304,7 @@ class VibeVoiceConfig:
 
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict, **kwargs):
         """
@@ -311,9 +318,9 @@ class VibeVoiceConfig:
 
         # Remove sub-configs from the main dict to avoid duplication
         main_config = {k: v for k, v in config_dict.items() if k not in [
-            "acoustic_tokenizer_config", 
-            "semantic_tokenizer_config", 
-            "decoder_config", 
+            "acoustic_tokenizer_config",
+            "semantic_tokenizer_config",
+            "decoder_config",
             "diffusion_head_config"
         ]}
 
@@ -327,7 +334,7 @@ class VibeVoiceConfig:
             **main_config
         )
 
-_default_config_json= """
+_default_config_json = """
 {
   "acostic_vae_dim": 64,
   "acoustic_tokenizer_config": {
@@ -446,14 +453,14 @@ _default_config_json= """
 }
 """
 
-import json
+import json # noqa F401
 
 DEFAULT_CONFIG = json.loads(_default_config_json)
 
 
 __all__ = [
-    "VibeVoiceAcousticTokenizerConfig", 
-    "VibeVoiceSemanticTokenizerConfig", 
-    "VibeVoiceDiffusionHeadConfig", 
+    "VibeVoiceAcousticTokenizerConfig",
+    "VibeVoiceSemanticTokenizerConfig",
+    "VibeVoiceDiffusionHeadConfig",
     "VibeVoiceConfig"
 ]

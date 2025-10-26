@@ -1,0 +1,112 @@
+'use client';
+
+import { useProject } from '@/lib/ProjectContext';
+import { SessionProvider } from '@/lib/SessionContext';
+import { GenerationProvider, useGeneration } from '@/lib/GenerationContext';
+import GenerationHistory from '@/components/GenerationHistory';
+import CurrentGeneration from '@/components/CurrentGeneration';
+import GenerationForm from '@/components/GenerationForm';
+
+function GenerateVoiceContent() {
+  const { currentProject } = useProject();
+  const { currentGeneration } = useGeneration();
+
+  // Safety check - should not happen due to wrapper logic, but prevents errors
+  if (!currentProject) {
+    return null;
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+            <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+              {currentProject.name}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content - Two Column Layout */}
+      <div className="flex-1 overflow-hidden bg-gray-50">
+        <div className="h-full grid grid-cols-2 gap-6 p-6">
+          {/* Left Column - Generation History */}
+          <div className="bg-white rounded-lg shadow-sm p-6 overflow-hidden flex flex-col">
+            <GenerationHistory />
+          </div>
+
+          {/* Right Column - Current Generation or Form */}
+          <div className="flex flex-col gap-6 overflow-y-auto">
+            {/* Current Generation Status (if active) */}
+            {currentGeneration && <CurrentGeneration />}
+
+            {/* Generation Form (if no active generation) */}
+            {!currentGeneration && (
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <GenerationForm />
+              </div>
+            )}
+
+            {/* Info Card */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">How it works</h3>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li>1. Select a dialog session from your project</li>
+                <li>2. Configure generation parameters (model type, CFG scale, seed)</li>
+                <li>3. Click "Start Generation" to begin processing</li>
+                <li>4. Monitor progress in the current generation panel</li>
+                <li>5. Download completed audio from the history list</li>
+              </ul>
+            </div>
+
+            {/* Technical Info */}
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Model Information</h3>
+              <div className="text-xs text-gray-700 space-y-1">
+                <p><strong>float8_e4m3fn:</strong> Optimized 8-bit model, faster with less memory</p>
+                <p><strong>bf16:</strong> Full precision model, higher quality but slower</p>
+                <p><strong>CFG Scale:</strong> Controls adherence to input (1.0-3.0 recommended)</p>
+                <p><strong>Seed:</strong> Random seed for reproducible results</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function GenerateVoicePage() {
+  const { currentProject } = useProject();
+
+  if (!currentProject) {
+    return (
+      <div className="h-full flex flex-col">
+        <header className="bg-white border-b border-gray-200 px-6 py-4">
+          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+          <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
+        </header>
+
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <p className="text-gray-500">Please select a project to start generating voices</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <SessionProvider>
+      <GenerationProvider projectId={currentProject.id}>
+        <GenerateVoiceContent />
+      </GenerationProvider>
+    </SessionProvider>
+  );
+}

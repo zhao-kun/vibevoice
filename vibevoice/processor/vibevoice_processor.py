@@ -667,13 +667,11 @@ class VibeVoiceProcessor:
         audio_processor_input_names = self.audio_processor.model_input_names
         return list(dict.fromkeys(tokenizer_input_names + audio_processor_input_names + ["speech_inputs", "speech_input_mask"]))
 
-    def save_audio(self, 
-        audio: Union[torch.Tensor, np.ndarray, List[Union[torch.Tensor, np.ndarray]]],
-        output_path: str = "output.wav",
-        sampling_rate: Optional[int] = None,
-        normalize: bool = False,
-        batch_prefix: str = "audio_",
-    ) -> str:
+    def save_audio(self, audio: Union[torch.Tensor, np.ndarray, List[Union[torch.Tensor, np.ndarray]]],
+                   output_path: str = "output.wav",
+                   sampling_rate: Optional[int] = None,
+                   normalize: bool = False,
+                   batch_prefix: str = "audio_") -> str:
         """
         Save audio data to a file.
         Args:
