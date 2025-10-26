@@ -7,7 +7,8 @@ import type {
   CreateGenerationRequest,
   CreateGenerationResponse,
   CurrentGenerationResponse,
-  ListGenerationsResponse
+  ListGenerationsResponse,
+  GetGenerationResponse
 } from '@/types/generation';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
@@ -274,6 +275,41 @@ class ApiClient {
 
   async listGenerations(projectId: string): Promise<ListGenerationsResponse> {
     return this.fetch(`/projects/${encodeURIComponent(projectId)}/generations`);
+  }
+
+  async getGeneration(projectId: string, requestId: string): Promise<GetGenerationResponse> {
+    return this.fetch(`/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(requestId)}`);
+  }
+
+  async deleteGeneration(
+    projectId: string,
+    requestId: string
+  ): Promise<{ message: string; request_id: string }> {
+    return this.fetch(
+      `/projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(requestId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  async batchDeleteGenerations(
+    projectId: string,
+    requestIds: string[]
+  ): Promise<{
+    message: string;
+    deleted_count: number;
+    failed_count: number;
+    deleted_ids: string[];
+    failed_ids: string[];
+  }> {
+    return this.fetch(
+      `/projects/${encodeURIComponent(projectId)}/generations/batch-delete`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ request_ids: requestIds }),
+      }
+    );
   }
 
   getGenerationDownloadUrl(projectId: string, requestId: string): string {

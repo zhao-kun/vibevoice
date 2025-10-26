@@ -73,6 +73,84 @@ class VoiceGenerationService:
         metadata = self._load_metadata()
         return [Generation.from_dict(data) for data in metadata]
 
+    def delete_generation(self, request_id: str) -> bool:
+        """
+        Delete a generation and its associated audio file
+
+        Args:
+            request_id: Generation request identifier
+
+        Returns:
+            True if deletion was successful, False if generation not found
+        """
+        metadata = self._load_metadata()
+
+        # Find the generation
+        generation_data = next((g for g in metadata if g.get('request_id') == request_id), None)
+        if not generation_data:
+            return False
+
+        # Delete audio file if it exists
+        output_filename = generation_data.get('output_filename')
+        if output_filename:
+            audio_file_path = self.output_dir / output_filename
+            if audio_file_path.exists():
+                try:
+                    audio_file_path.unlink()
+                except Exception as e:
+                    raise RuntimeError(f"Failed to delete audio file: {str(e)}")
+
+        # Remove from metadata
+        updated_metadata = [g for g in metadata if g.get('request_id') != request_id]
+        self._save_metadata(updated_metadata)
+
+        return True
+
+    def delete_generations_batch(self, request_ids: List[str]) -> Dict[str, Any]:
+        """
+        Delete multiple generations and their associated audio files
+
+        Args:
+            request_ids: List of generation request identifiers
+
+        Returns:
+            Dictionary with success count and failed request IDs
+        """
+        metadata = self._load_metadata()
+        deleted_ids = []
+        failed_ids = []
+
+        for request_id in request_ids:
+            # Find the generation
+            generation_data = next((g for g in metadata if g.get('request_id') == request_id), None)
+            if not generation_data:
+                failed_ids.append(request_id)
+                continue
+
+            # Delete audio file if it exists
+            output_filename = generation_data.get('output_filename')
+            if output_filename:
+                audio_file_path = self.output_dir / output_filename
+                if audio_file_path.exists():
+                    try:
+                        audio_file_path.unlink()
+                    except Exception:
+                        failed_ids.append(request_id)
+                        continue
+
+            deleted_ids.append(request_id)
+
+        # Remove deleted generations from metadata
+        updated_metadata = [g for g in metadata if g.get('request_id') not in deleted_ids]
+        self._save_metadata(updated_metadata)
+
+        return {
+            'deleted_count': len(deleted_ids),
+            'failed_count': len(failed_ids),
+            'deleted_ids': deleted_ids,
+            'failed_ids': failed_ids
+        }
+
     def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42,
                    cfg_scale: float = 1.3, model_dtype: str = "float8_e4m3fn",
                    attn_implementation: str = "sdpa") -> Generation:

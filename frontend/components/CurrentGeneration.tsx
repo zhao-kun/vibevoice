@@ -1,12 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useGeneration } from '@/lib/GenerationContext';
 import { useProject } from '@/lib/ProjectContext';
 import { api } from '@/lib/api';
 import { InferencePhase } from '@/types/generation';
 
-export default function CurrentGeneration() {
+function CurrentGeneration() {
   const { currentGeneration } = useGeneration();
   const { currentProject } = useProject();
 
@@ -344,3 +344,6 @@ export default function CurrentGeneration() {
     </div>
   );
 }
+
+// Export with React.memo to prevent unnecessary re-renders
+export default React.memo(CurrentGeneration);

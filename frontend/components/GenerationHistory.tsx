@@ -1,28 +1,126 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useProject } from '@/lib/ProjectContext';
 import { useGeneration } from '@/lib/GenerationContext';
 import { api } from '@/lib/api';
 import type { Generation } from '@/types/generation';
 import { InferencePhase } from '@/types/generation';
 
-export default function GenerationHistory() {
+function GenerationHistory() {
   const { currentProject } = useProject();
-  const { generations, loading } = useGeneration();
+  const { generations, loading, deleteGeneration, batchDeleteGenerations } = useGeneration();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const toggleDetails = (requestId: string) => {
-    setExpandedId(expandedId === requestId ? null : requestId);
-  };
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  const handleDownload = (generation: Generation) => {
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Confirmation dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<'single' | 'bulk'>('single');
+  const [singleDeleteId, setSingleDeleteId] = useState<string | null>(null);
+
+  const toggleDetails = useCallback((requestId: string) => {
+    setExpandedId(prev => prev === requestId ? null : requestId);
+  }, []);
+
+  // Memoize pagination calculations
+  const paginationData = useMemo(() => {
+    const totalPages = Math.ceil(generations.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedGenerations = generations.slice(startIndex, endIndex);
+
+    return {
+      totalPages,
+      startIndex,
+      endIndex,
+      paginatedGenerations
+    };
+  }, [generations, currentPage, itemsPerPage]);
+
+  const { totalPages, startIndex, endIndex, paginatedGenerations } = paginationData;
+
+  // Selection handlers
+  const toggleSelection = useCallback((requestId: string) => {
+    setSelectedIds(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(requestId)) {
+        newSelected.delete(requestId);
+      } else {
+        newSelected.add(requestId);
+      }
+      return newSelected;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds(prev => {
+      if (prev.size === paginatedGenerations.length) {
+        return new Set();
+      } else {
+        return new Set(paginatedGenerations.map(g => g.request_id));
+      }
+    });
+  }, [paginatedGenerations]);
+
+  const isAllSelected = paginatedGenerations.length > 0 && selectedIds.size === paginatedGenerations.length;
+  const isSomeSelected = selectedIds.size > 0 && selectedIds.size < paginatedGenerations.length;
+
+  // Delete handlers
+  const handleDeleteClick = useCallback((requestId: string) => {
+    setSingleDeleteId(requestId);
+    setDeleteTarget('single');
+    setShowDeleteDialog(true);
+  }, []);
+
+  const handleBulkDeleteClick = useCallback(() => {
+    setDeleteTarget('bulk');
+    setShowDeleteDialog(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    try {
+      if (deleteTarget === 'single' && singleDeleteId) {
+        await deleteGeneration(singleDeleteId);
+      } else if (deleteTarget === 'bulk') {
+        await batchDeleteGenerations(Array.from(selectedIds));
+        setSelectedIds(new Set());
+      }
+      setShowDeleteDialog(false);
+      setSingleDeleteId(null);
+    } catch (error) {
+      console.error('Delete failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to delete generation(s)');
+    }
+  }, [deleteTarget, singleDeleteId, selectedIds, deleteGeneration, batchDeleteGenerations]);
+
+  const handleCancelDelete = useCallback(() => {
+    setShowDeleteDialog(false);
+    setSingleDeleteId(null);
+  }, []);
+
+  // Pagination handlers
+  const goToPage = useCallback((page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
+
+  const handleItemsPerPageChange = useCallback((value: number) => {
+    setItemsPerPage(value);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  }, []);
+
+  const handleDownload = useCallback((generation: Generation) => {
     if (!currentProject || !generation.output_filename) return;
 
     // Add download=true parameter to force download
     const url = api.getGenerationDownloadUrl(currentProject.id, generation.request_id) + '?download=true';
     window.open(url, '_blank');
-  };
+  }, [currentProject]);
 
   const getStatusColor = (status: InferencePhase): string => {
     switch (status) {
@@ -301,10 +399,25 @@ export default function GenerationHistory() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header with selection controls */}
       <div className="mb-4">
-        <h2 className="text-xl font-semibold">Generation History</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-xl font-semibold">Generation History</h2>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDeleteClick}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Delete Selected ({selectedIds.size})
+            </button>
+          )}
+        </div>
         <p className="text-sm text-gray-600">
           Total: {generations.length} generation{generations.length !== 1 ? 's' : ''}
+          {selectedIds.size > 0 && ` • ${selectedIds.size} selected`}
         </p>
       </div>
 
@@ -313,95 +426,226 @@ export default function GenerationHistory() {
           <p>No generations yet. Start your first generation!</p>
         </div>
       ) : (
-        <div className="space-y-2 overflow-y-auto flex-1">
-          {generations.map((generation) => {
-            const isExpanded = expandedId === generation.request_id;
+        <>
+          {/* Select all checkbox */}
+          {paginatedGenerations.length > 0 && (
+            <div className="mb-2 flex items-center gap-2 px-2">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = isSomeSelected;
+                }}
+                onChange={toggleSelectAll}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <label className="text-sm text-gray-700 cursor-pointer" onClick={toggleSelectAll}>
+                {isAllSelected ? 'Deselect All' : 'Select All on Page'}
+              </label>
+            </div>
+          )}
 
-            return (
-              <div
-                key={generation.request_id}
-                className="border border-gray-300 rounded-lg bg-white transition-all"
-              >
-                <div className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(
-                            generation.status
-                          )}`}
-                        >
-                          {getStatusLabel(generation.status)}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {generation.model_dtype}
-                        </span>
+          {/* Generation list */}
+          <div className="space-y-2 overflow-y-auto flex-1">
+            {paginatedGenerations.map((generation) => {
+              const isExpanded = expandedId === generation.request_id;
+              const isSelected = selectedIds.has(generation.request_id);
+
+              return (
+                <div
+                  key={generation.request_id}
+                  className={`border rounded-lg bg-white transition-all ${
+                    isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'
+                  }`}
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      {/* Selection checkbox */}
+                      <div className="pt-1">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelection(generation.request_id)}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </div>
 
-                      <p className="text-sm text-gray-600 mb-1">
-                        Session: <span className="font-medium">{generation.session_id}</span>
-                      </p>
-
-                      <p className="text-xs text-gray-500">
-                        Created: {formatDate(generation.created_at)}
-                      </p>
-
-                      {generation.percentage !== null && (
-                        <div className="mt-2">
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-500 h-2 rounded-full transition-all"
-                              style={{ width: `${generation.percentage}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {generation.percentage.toFixed(1)}%
-                          </p>
+                      {/* Main content */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(
+                              generation.status
+                            )}`}
+                          >
+                            {getStatusLabel(generation.status)}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {generation.model_dtype}
+                          </span>
                         </div>
-                      )}
-                    </div>
 
-                    <div className="flex flex-col gap-2 ml-4">
-                      <button
-                        onClick={() => toggleDetails(generation.request_id)}
-                        className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center gap-1"
-                      >
-                        {isExpanded ? (
-                          <>
-                            <span>Hide</span>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                            </svg>
-                          </>
-                        ) : (
-                          <>
-                            <span>Details</span>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </>
+                        <p className="text-sm text-gray-600 mb-1">
+                          Session: <span className="font-medium">{generation.session_id}</span>
+                        </p>
+
+                        <p className="text-xs text-gray-500">
+                          Created: {formatDate(generation.created_at)}
+                        </p>
+
+                        {generation.percentage !== null && (
+                          <div className="mt-2">
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-blue-500 h-2 rounded-full transition-all"
+                                style={{ width: `${generation.percentage}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {generation.percentage.toFixed(1)}%
+                            </p>
+                          </div>
                         )}
-                      </button>
+                      </div>
 
-                      {generation.status === InferencePhase.COMPLETED && generation.output_filename && (
+                      {/* Action buttons */}
+                      <div className="flex flex-col gap-2">
                         <button
-                          onClick={() => handleDownload(generation)}
-                          className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                          onClick={() => toggleDetails(generation.request_id)}
+                          className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center gap-1"
                         >
-                          Download
+                          {isExpanded ? (
+                            <>
+                              <span>Hide</span>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            </>
+                          ) : (
+                            <>
+                              <span>Details</span>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </>
+                          )}
                         </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Expandable Details Section */}
-                  {isExpanded && renderGenerationDetails(generation)}
+                        {generation.status === InferencePhase.COMPLETED && generation.output_filename && (
+                          <button
+                            onClick={() => handleDownload(generation)}
+                            className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                          >
+                            Download
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleDeleteClick(generation.request_id)}
+                          className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 flex items-center gap-1"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expandable Details Section */}
+                    {isExpanded && renderGenerationDetails(generation)}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination controls */}
+          <div className="mt-4 flex items-center justify-between border-t border-gray-300 pt-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-gray-700">Items per page:</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-700">
+                Page {currentPage} of {totalPages} ({startIndex + 1}-{Math.min(endIndex, generations.length)} of {generations.length})
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => goToPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  ««
+                </button>
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  ‹
+                </button>
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  ›
+                </button>
+                <button
+                  onClick={() => goToPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                >
+                  »»
+                </button>
               </div>
-            );
-          })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2">Confirm Deletion</h3>
+            <p className="text-gray-600 mb-4">
+              {deleteTarget === 'single'
+                ? 'Are you sure you want to delete this generation? This will also delete the generated audio file.'
+                : `Are you sure you want to delete ${selectedIds.size} generation${selectedIds.size > 1 ? 's' : ''}? This will also delete the generated audio files.`}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelDelete}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
+// Export with React.memo to prevent unnecessary re-renders
+export default React.memo(GenerationHistory);

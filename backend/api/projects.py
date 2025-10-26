@@ -1,6 +1,7 @@
 """
 Projects API endpoints
 """
+import re
 from flask import request, jsonify, current_app
 from backend.api import api_bp
 from backend.services.project_service import ProjectService
@@ -12,6 +13,39 @@ def get_project_service() -> ProjectService:
         workspace_dir=current_app.config['WORKSPACE_DIR'],
         meta_file_name=current_app.config['PROJECTS_META_FILE']
     )
+
+
+def validate_project_name(name: str) -> tuple[bool, str]:
+    """
+    Validate project name according to rules:
+    - Must start with an alphabet character (a-z, A-Z)
+    - Can include: alphabet, numbers, underscore (_), hyphen (-), and space
+    - Spaces can only appear in the middle (not at start or end)
+
+    Args:
+        name: Project name to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not name:
+        return False, "Project name cannot be empty"
+
+    # Check if name starts or ends with space
+    if name.startswith(' ') or name.endswith(' '):
+        return False, "Project name cannot start or end with spaces"
+
+    # Check if first character is an alphabet
+    if not name[0].isalpha():
+        return False, "Project name must start with an alphabet character"
+
+    # Check if all characters are valid (alphabet, number, _, -, or space)
+    # Pattern: starts with letter, followed by any combination of letters, numbers, _, -, or spaces
+    pattern = r'^[a-zA-Z][a-zA-Z0-9_\- ]*$'
+    if not re.match(pattern, name):
+        return False, "Project name can only contain letters, numbers, underscores, hyphens, and spaces"
+
+    return True, ""
 
 
 @api_bp.route('/projects', methods=['GET'])
@@ -98,6 +132,14 @@ def create_project():
                 'message': 'Project name is required'
             }), 400
 
+        # Validate project name
+        is_valid, error_message = validate_project_name(name)
+        if not is_valid:
+            return jsonify({
+                'error': 'Validation Error',
+                'message': error_message
+            }), 400
+
         description = data.get('description', '')
 
         service = get_project_service()
@@ -146,6 +188,15 @@ def update_project(project_id):
         name = data.get('name')
         description = data.get('description')
 
+        # Validate project name if provided
+        if name is not None:
+            is_valid, error_message = validate_project_name(name)
+            if not is_valid:
+                return jsonify({
+                    'error': 'Validation Error',
+                    'message': error_message
+                }), 400
+
         service = get_project_service()
         project = service.update_project(project_id, name, description)
 
@@ -157,6 +208,11 @@ def update_project(project_id):
 
         return jsonify(project.to_dict()), 200
 
+    except ValueError as e:
+        return jsonify({
+            'error': 'Validation Error',
+            'message': str(e)
+        }), 400
     except Exception as e:
         return jsonify({
             'error': 'Failed to update project',

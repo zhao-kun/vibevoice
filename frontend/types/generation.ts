@@ -74,3 +74,10 @@ export interface ListGenerationsResponse {
   generations: Generation[];
   count: number;
 }
+
+/**
+ * Response from GET /generations/:request_id
+ */
+export interface GetGenerationResponse {
+  generation: Generation;
+}

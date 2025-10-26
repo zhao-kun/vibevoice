@@ -211,3 +211,167 @@ def download_generation_audio(project_id: str, request_id: str):
             'error': 'Failed to download generated audio',
             'message': str(e)
         }), 500
+
+@api_bp.route('/projects/<project_id>/generations/<request_id>', methods=['GET'])
+def get_generation(project_id: str, request_id: str):
+    """
+    Get a specific generation by request ID
+
+    Args:
+        project_id: Project identifier
+        request_id: Generation request identifier
+    Returns:
+        JSON response with generation data
+    """
+    try:
+        # Get project service to find project directory
+        project_service = ProjectService(workspace_dir=current_app.config['WORKSPACE_DIR'],
+                                         meta_file_name=current_app.config['PROJECTS_META_FILE'])
+
+        # Get project path
+        project_path = project_service.get_project_path(project_id)
+        if not project_path:
+            return jsonify({
+                'error': 'Project not found',
+                'message': f'Project with ID "{project_id}" does not exist'
+            }), 404
+
+        # Get speaker service for validation
+        speaker_service = SpeakerService(project_path / 'voices')
+        dialog_service = DialogSessionService(project_path / 'scripts', speaker_service=speaker_service)
+        service = VoiceGenerationService(project_path / 'output', speaker_service=speaker_service, dialog_service=dialog_service)
+
+        # Get all generations and find the one with matching request_id
+        generations = service.list_generations()
+        generation = next((g for g in generations if g.request_id == request_id), None)
+
+        if not generation:
+            return jsonify({
+                'error': 'Generation not found',
+                'message': f'Generation with request ID "{request_id}" does not exist'
+            }), 404
+
+        return jsonify({
+            'generation': generation.to_dict()
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error occurred while retrieving generation: {e}")
+        return jsonify({
+            'error': 'Failed to retrieve generation',
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/projects/<project_id>/generations/<request_id>', methods=['DELETE'])
+def delete_generation(project_id: str, request_id: str):
+    """
+    Delete a specific generation and its audio file
+
+    Args:
+        project_id: Project identifier
+        request_id: Generation request identifier
+    Returns:
+        JSON response with deletion status
+    """
+    try:
+        # Get project service to find project directory
+        project_service = ProjectService(workspace_dir=current_app.config['WORKSPACE_DIR'],
+                                         meta_file_name=current_app.config['PROJECTS_META_FILE'])
+
+        # Get project path
+        project_path = project_service.get_project_path(project_id)
+        if not project_path:
+            return jsonify({
+                'error': 'Project not found',
+                'message': f'Project with ID "{project_id}" does not exist'
+            }), 404
+
+        # Get speaker service for validation
+        speaker_service = SpeakerService(project_path / 'voices')
+        dialog_service = DialogSessionService(project_path / 'scripts', speaker_service=speaker_service)
+        service = VoiceGenerationService(project_path / 'output', speaker_service=speaker_service, dialog_service=dialog_service)
+
+        # Delete the generation
+        success = service.delete_generation(request_id)
+        if not success:
+            return jsonify({
+                'error': 'Generation not found',
+                'message': f'Generation with request ID "{request_id}" does not exist'
+            }), 404
+
+        return jsonify({
+            'message': 'Generation deleted successfully',
+            'request_id': request_id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error occurred while deleting generation: {e}")
+        return jsonify({
+            'error': 'Failed to delete generation',
+            'message': str(e)
+        }), 500
+
+@api_bp.route('/projects/<project_id>/generations/batch-delete', methods=['POST'])
+def batch_delete_generations(project_id: str):
+    """
+    Delete multiple generations and their audio files
+
+    Request body:
+        {
+            "request_ids": ["id1", "id2", ...]
+        }
+
+    Args:
+        project_id: Project identifier
+    Returns:
+        JSON response with batch deletion results
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Request body must be JSON'
+            }), 400
+
+        request_ids = data.get('request_ids', [])
+        if not request_ids or not isinstance(request_ids, list):
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'request_ids must be a non-empty array'
+            }), 400
+
+        # Get project service to find project directory
+        project_service = ProjectService(workspace_dir=current_app.config['WORKSPACE_DIR'],
+                                         meta_file_name=current_app.config['PROJECTS_META_FILE'])
+
+        # Get project path
+        project_path = project_service.get_project_path(project_id)
+        if not project_path:
+            return jsonify({
+                'error': 'Project not found',
+                'message': f'Project with ID "{project_id}" does not exist'
+            }), 404
+
+        # Get speaker service for validation
+        speaker_service = SpeakerService(project_path / 'voices')
+        dialog_service = DialogSessionService(project_path / 'scripts', speaker_service=speaker_service)
+        service = VoiceGenerationService(project_path / 'output', speaker_service=speaker_service, dialog_service=dialog_service)
+
+        # Delete generations in batch
+        result = service.delete_generations_batch(request_ids)
+
+        return jsonify({
+            'message': f'Batch delete completed: {result["deleted_count"]} deleted, {result["failed_count"]} failed',
+            'deleted_count': result['deleted_count'],
+            'failed_count': result['failed_count'],
+            'deleted_ids': result['deleted_ids'],
+            'failed_ids': result['failed_ids']
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error occurred while batch deleting generations: {e}")
+        return jsonify({
+            'error': 'Failed to batch delete generations',
+            'message': str(e)
+        }), 500
