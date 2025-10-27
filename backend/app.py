@@ -2,7 +2,7 @@
 Flask application factory for VibeVoice backend
 """
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from pathlib import Path
 
@@ -19,7 +19,14 @@ def create_app(config_name=None):
     Returns:
         Flask application instance
     """
-    app = Flask(__name__)
+    # Get the directory where dist folder is located (backend directory)
+    backend_dir = Path(__file__).parent
+    static_folder = backend_dir / 'dist'
+
+    # Create Flask app with static folder configuration
+    app = Flask(__name__,
+                static_folder=str(static_folder),
+                static_url_path='')
 
     # Load configuration
     if config_name is None:
@@ -51,20 +58,28 @@ def create_app(config_name=None):
             'service': 'vibevoice-backend'
         }), 200
 
-    @app.route('/', methods=['GET'])
-    def index():
-        """Root endpoint"""
-        return jsonify({
-            'service': 'VibeVoice API',
-            'version': '0.0.1',
-            'status': 'running'
-        }), 200
+    # Serve frontend static files
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve_spa(path):
+        """
+        Serve frontend SPA
+        - API routes are handled by blueprints
+        - Static files are served from dist folder
+        - All other routes serve index.html for client-side routing
+        """
+        # If path exists as a static file, serve it
+        if path and (static_folder / path).exists():
+            return send_from_directory(static_folder, path)
+        # Otherwise, serve index.html for SPA routing
+        return send_from_directory(static_folder, 'index.html')
 
     return app
 
 
 def register_error_handlers(app):
     """Register error handlers for the application"""
+    from flask import request
 
     @app.errorhandler(400)
     def bad_request(error):
@@ -75,10 +90,23 @@ def register_error_handlers(app):
 
     @app.errorhandler(404)
     def not_found(error):
-        return jsonify({
-            'error': 'Not Found',
-            'message': 'The requested resource was not found'
-        }), 404
+        # If it's an API request, return JSON 404
+        if request.path.startswith('/api/'):
+            return jsonify({
+                'error': 'Not Found',
+                'message': 'The requested resource was not found'
+            }), 404
+        # Otherwise, let the SPA handle it (this shouldn't happen with catch-all route)
+        # But just in case, try to serve index.html
+        try:
+            backend_dir = Path(__file__).parent
+            static_folder = backend_dir / 'dist'
+            return send_from_directory(static_folder, 'index.html')
+        except Exception:
+            return jsonify({
+                'error': 'Not Found',
+                'message': 'The requested resource was not found'
+            }), 404
 
     @app.errorhandler(500)
     def internal_error(error):
