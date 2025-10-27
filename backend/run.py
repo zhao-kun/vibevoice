@@ -27,7 +27,7 @@ def main():
 
     # Get configuration
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
-    port = int(os.environ.get('FLASK_PORT', 5000))
+    port = int(os.environ.get('FLASK_PORT', 9527))
     debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
 
     print(f"""

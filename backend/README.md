@@ -62,7 +62,7 @@ Or using the module:
 python -m backend.run
 ```
 
-The server will start at `http://localhost:5000` by default.
+The server will start at `http://localhost:9527` by default.
 
 ## API Endpoints
 
@@ -171,7 +171,7 @@ Environment variables (see `.env.example`):
 
 - `FLASK_ENV`: Environment (development/production/testing)
 - `FLASK_HOST`: Server host (default: 0.0.0.0)
-- `FLASK_PORT`: Server port (default: 5000)
+- `FLASK_PORT`: Server port (default: 9527)
 - `FLASK_DEBUG`: Enable debug mode (default: true)
 - `SECRET_KEY`: Flask secret key
 - `CORS_ORIGINS`: Allowed CORS origins (comma-separated)
