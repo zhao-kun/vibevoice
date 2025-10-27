@@ -176,8 +176,7 @@ class VoiceGenerationService:
                                        project_id=project_id,
                                        project_dir=str(self.output_dir))
         inference = InferenceBase.create(generation, self.speaker_service,
-                                         self.dialog_service, self.meta_file_path,
-                                         fake=True)
+                                         self.dialog_service, self.meta_file_path)
 
         task = Task.from_inference(inference=inference,
                                    file_handler=self.file_handler,

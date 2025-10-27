@@ -428,7 +428,7 @@ class VibeVoiceForConditionalInference(nn.Module):
         max_step_per_sample = torch.min(generation_config.max_length - initial_length_per_sample, (max_length_times * initial_length_per_sample).long())
         reach_max_step_sample = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-        status_update(InferencePhase.INFERENCING, current=0, total_steps=max_steps)
+        status_update(InferencePhase.INFERENCING, current=0, total_step=max_steps)
 
         # Create progress iterator if verbose
         if kwargs.get("show_progress_bar", True):
@@ -683,7 +683,7 @@ class VibeVoiceForConditionalInference(nn.Module):
 
                 # Update embeddings for diffusion indices
                 next_inputs_embeds[diffusion_indices] = diffusion_embeds
-                status_update(InferencePhase.INFERENCING, current=step, total_steps=max_steps)
+                status_update(InferencePhase.INFERENCING, current=step, total_step=max_steps)
 
             # Set inputs_embeds for next iteration
             inputs_embeds = next_inputs_embeds
