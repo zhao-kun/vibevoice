@@ -83,6 +83,7 @@ export default function DialogEditor({
     if (viewMode === 'text') {
       setTextContent(dialogLinesToText(dialogLines));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
   // Handle view mode toggle

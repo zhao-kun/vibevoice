@@ -1,13 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useProject } from '@/lib/ProjectContext';
+import React, { useState } from 'react';
 import { useSession } from '@/lib/SessionContext';
 import { useGeneration } from '@/lib/GenerationContext';
-import type { ModelDtype, CreateGenerationRequest } from '@/types/generation';
+import type { CreateGenerationRequest } from '@/types/generation';
 
 export default function GenerationForm() {
-  const { currentProject } = useProject();
   const { sessions } = useSession();
   const { startGeneration, loading } = useGeneration();
 

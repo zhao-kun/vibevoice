@@ -17,7 +17,6 @@ export default function SpeakerRoleManager() {
     deleteSpeakerRole,
     uploadVoiceFile,
     removeVoiceFile,
-    hasUnsavedChanges,
     loading,
     error,
   } = useSpeakerRole();
@@ -181,7 +180,7 @@ export default function SpeakerRoleManager() {
           {speakerRoles.length === 0 && (
             <div className="text-center py-12 text-gray-500">
               <p className="text-lg mb-2">No speaker roles yet</p>
-              <p className="text-sm">Click "Add Speaker" to create your first speaker role</p>
+              <p className="text-sm">Click &ldquo;Add Speaker&rdquo; to create your first speaker role</p>
             </div>
           )}
         </div>

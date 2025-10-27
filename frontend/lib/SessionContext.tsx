@@ -118,6 +118,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
 
     loadSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject]);
 
   // Save current session ID to localStorage

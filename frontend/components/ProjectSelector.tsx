@@ -26,7 +26,7 @@ export default function ProjectSelector() {
         setShowCreateModal(false);
         // Will automatically navigate via the context update
         setTimeout(() => router.push("/voice-editor"), 100);
-      } catch (err) {
+      } catch {
         toast.error("Failed to create project. Please try again.");
       }
     }
@@ -37,7 +37,7 @@ export default function ProjectSelector() {
     if (confirm("Are you sure you want to delete this project?")) {
       try {
         await deleteProject(projectId);
-      } catch (err) {
+      } catch {
         toast.error("Failed to delete project. Please try again.");
       }
     }

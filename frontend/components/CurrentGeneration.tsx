@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useGeneration } from '@/lib/GenerationContext';
 import { useProject } from '@/lib/ProjectContext';
 import { api } from '@/lib/api';

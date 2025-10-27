@@ -59,7 +59,7 @@ function GenerateVoiceContent() {
               <ul className="text-sm text-blue-800 space-y-1">
                 <li>1. Select a dialog session from your project</li>
                 <li>2. Configure generation parameters (model type, CFG scale, seed)</li>
-                <li>3. Click "Start Generation" to begin processing</li>
+                <li>3. Click &ldquo;Start Generation&rdquo; to begin processing</li>
                 <li>4. Monitor progress in the current generation panel</li>
                 <li>5. Download completed audio from the history list</li>
               </ul>

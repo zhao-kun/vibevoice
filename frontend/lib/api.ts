@@ -3,7 +3,6 @@
  */
 
 import type {
-  Generation,
   CreateGenerationRequest,
   CreateGenerationResponse,
   CurrentGenerationResponse,
