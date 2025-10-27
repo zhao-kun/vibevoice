@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Project, ProjectContextType } from "@/types/project";
 import { api } from "./api";
+import toast from "react-hot-toast";
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
@@ -88,7 +89,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   const deleteProject = async (projectId: string) => {
     if (projects.length <= 1) {
-      alert("Cannot delete the last project");
+      toast.error("Cannot delete the last project");
       return;
     }
 

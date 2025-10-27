@@ -1,6 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { DialogLine, SpeakerInfo } from "@/types/dialog";
+import toast from "react-hot-toast";
 
 interface DialogEditorProps {
   dialogLines: DialogLine[];
@@ -10,6 +12,7 @@ interface DialogEditorProps {
   onMoveLine: (lineId: string, direction: "up" | "down") => void;
   onClear: () => void;
   onSave: () => void;
+  onSetLines: (lines: DialogLine[]) => void;
   hasUnsavedChanges: boolean;
   isSaving: boolean;
 }
@@ -22,18 +25,115 @@ export default function DialogEditor({
   onMoveLine,
   onClear,
   onSave,
+  onSetLines,
   hasUnsavedChanges,
   isSaving,
 }: DialogEditorProps) {
+  const [viewMode, setViewMode] = useState<'visual' | 'text'>('visual');
+  const [textContent, setTextContent] = useState('');
+
   const getSpeakerById = (speakerId: string) => {
     return speakers.find((s) => s.id === speakerId);
+  };
+
+  // Convert dialog lines to text format
+  const dialogLinesToText = (lines: DialogLine[]): string => {
+    return lines.map(line => {
+      const speaker = getSpeakerById(line.speakerId);
+      const speakerName = speaker?.displayName || line.speakerId;
+      return `${speakerName}: ${line.content}`;
+    }).join('\n\n');
+  };
+
+  // Parse text format to dialog lines
+  const textToDialogLines = (text: string): DialogLine[] | null => {
+    const lines = text.trim().split('\n\n');
+    const parsed: DialogLine[] = [];
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+
+      const match = trimmedLine.match(/^(.+?):\s*(.*)$/);
+      if (!match) {
+        toast.error(`Invalid format: "${trimmedLine.substring(0, 50)}..."`);
+        return null;
+      }
+
+      const [, speakerName, content] = match;
+      const speaker = speakers.find(s => s.displayName === speakerName.trim());
+
+      if (!speaker) {
+        toast.error(`Unknown speaker: "${speakerName}". Available speakers: ${speakers.map(s => s.displayName).join(', ')}`);
+        return null;
+      }
+
+      parsed.push({
+        id: `line-${Date.now()}-${Math.random()}`,
+        speakerId: speaker.id,
+        content: content.trim(),
+      });
+    }
+
+    return parsed;
+  };
+
+  // Update text content when switching to text view
+  useEffect(() => {
+    if (viewMode === 'text') {
+      setTextContent(dialogLinesToText(dialogLines));
+    }
+  }, [viewMode]);
+
+  // Handle view mode toggle
+  const handleToggleView = () => {
+    if (viewMode === 'visual') {
+      // Switch to text view
+      setViewMode('text');
+      setTextContent(dialogLinesToText(dialogLines));
+    } else {
+      // Switch back to visual view - validate and parse
+      const parsed = textToDialogLines(textContent);
+      if (parsed !== null) {
+        // Valid! Update the dialog lines
+        onSetLines(parsed);
+        setViewMode('visual');
+        toast.success('Text parsed successfully');
+      }
+      // If invalid, stay in text view (error already shown)
+    }
   };
 
   return (
     <div className="h-full flex flex-col bg-white">
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold text-gray-800">Dialog Editor</h2>
+          <div className="flex items-center space-x-3">
+            <h2 className="text-lg font-semibold text-gray-800">Dialog Editor</h2>
+            {/* View Mode Toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => viewMode === 'text' && handleToggleView()}
+                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                  viewMode === 'visual'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Visual
+              </button>
+              <button
+                onClick={() => viewMode === 'visual' && handleToggleView()}
+                className={`px-3 py-1 text-sm font-medium rounded transition-colors ${
+                  viewMode === 'text'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Text
+              </button>
+            </div>
+          </div>
           <div className="flex items-center space-x-2">
             {hasUnsavedChanges && (
               <span className="text-xs text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg">
@@ -56,12 +156,19 @@ export default function DialogEditor({
           </div>
         </div>
         <p className="text-sm text-gray-500">
-          {dialogLines.length} dialog lines • Edit content and manage sequence
+          {dialogLines.length} dialog lines • {viewMode === 'visual' ? 'Edit content and manage sequence' : 'Edit as raw text (format: "Speaker Name: dialog text")'}
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {dialogLines.length === 0 ? (
+      <div className="flex-1 overflow-y-auto p-4">
+        {viewMode === 'text' ? (
+          <textarea
+            value={textContent}
+            onChange={(e) => setTextContent(e.target.value)}
+            placeholder="Enter dialog in the format:&#10;&#10;Speaker 1: Dialog text here&#10;&#10;Speaker 2: Another line"
+            className="w-full h-full p-4 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700 font-mono text-sm"
+          />
+        ) : dialogLines.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-400">
               <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,6 +179,7 @@ export default function DialogEditor({
             </div>
           </div>
         ) : (
+          <div className="space-y-3">{
           dialogLines.map((line, index) => {
             const speaker = getSpeakerById(line.speakerId);
             const isFirst = index === 0;
@@ -145,7 +253,8 @@ export default function DialogEditor({
                 />
               </div>
             );
-          })
+          })}
+          </div>
         )}
       </div>
     </div>

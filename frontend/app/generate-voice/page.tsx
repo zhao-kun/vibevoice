@@ -20,17 +20,17 @@ function GenerateVoiceContent() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
-            <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+        <div className="flex items-center space-x-2 mb-1">
+          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+          {currentProject && (
+            <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
               {currentProject.name}
             </span>
-          </div>
+          )}
         </div>
+        <p className="text-sm text-gray-500">
+          Generate speech from your scripts and voice samples
+        </p>
       </header>
 
       {/* Main Content - Two Column Layout */}

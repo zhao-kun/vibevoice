@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import SpeakerSelector from "@/components/SpeakerSelector";
 import DialogEditor from "@/components/DialogEditor";
 import DialogPreview from "@/components/DialogPreview";
@@ -9,6 +9,7 @@ import { DialogLine, SpeakerInfo } from "@/types/dialog";
 import { useProject } from "@/lib/ProjectContext";
 import { useSession } from "@/lib/SessionContext";
 import { SpeakerRoleProvider, useSpeakerRole } from "@/lib/SpeakerRoleContext";
+import toast from "react-hot-toast";
 
 function VoiceEditorContent() {
   const { currentProject } = useProject();
@@ -51,7 +52,11 @@ function VoiceEditorContent() {
   useEffect(() => {
     if (!currentSession) return;
 
-    const isDifferent = JSON.stringify(dialogLines) !== JSON.stringify(currentSession.dialogLines);
+    // Compare only content, not IDs (to avoid false positives when switching views)
+    const currentContent = dialogLines.map(line => ({ speakerId: line.speakerId, content: line.content }));
+    const savedContent = currentSession.dialogLines.map(line => ({ speakerId: line.speakerId, content: line.content }));
+
+    const isDifferent = JSON.stringify(currentContent) !== JSON.stringify(savedContent);
     setHasUnsavedChanges(isDifferent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogLines]);
@@ -101,7 +106,7 @@ function VoiceEditorContent() {
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Failed to save dialog:', error);
-      alert('Failed to save changes. Please try again.');
+      toast.error('Failed to save changes. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -155,6 +160,7 @@ function VoiceEditorContent() {
             onMoveLine={handleMoveLine}
             onClear={() => setDialogLines([])}
             onSave={handleSave}
+            onSetLines={setDialogLines}
             hasUnsavedChanges={hasUnsavedChanges}
             isSaving={isSaving}
           />

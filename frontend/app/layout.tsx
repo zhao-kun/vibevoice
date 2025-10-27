@@ -4,6 +4,7 @@ import "./globals.css";
 import { ProjectProvider } from "@/lib/ProjectContext";
 import { SessionProvider } from "@/lib/SessionContext";
 import LayoutWrapper from "@/components/LayoutWrapper";
+import { Toaster } from "react-hot-toast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,6 +31,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <Toaster position="top-right" />
         <ProjectProvider>
           <SessionProvider>
             <LayoutWrapper>{children}</LayoutWrapper>

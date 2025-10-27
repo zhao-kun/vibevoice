@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useProject } from "@/lib/ProjectContext";
 import { useState, useEffect, useRef } from "react";
+import { api } from "@/lib/api";
+import type { Generation } from "@/types/generation";
 
 interface MenuItem {
   id: string;
@@ -51,6 +53,47 @@ export default function Navigation() {
   const { currentProject, projects, selectProject } = useProject();
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Task monitoring state
+  const [runningGeneration, setRunningGeneration] = useState<Generation | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Poll for running generation globally
+  useEffect(() => {
+    const checkRunningGeneration = async () => {
+      try {
+        const response = await api.getCurrentGeneration();
+        setRunningGeneration(response.generation);
+      } catch (error) {
+        console.error('Error checking running generation:', error);
+        setRunningGeneration(null);
+      }
+    };
+
+    // Initial check
+    checkRunningGeneration();
+
+    // Poll every 2 seconds
+    pollingIntervalRef.current = setInterval(checkRunningGeneration, 2000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Navigate to generation page of project with running task
+  const handleTaskIconClick = () => {
+    if (runningGeneration && runningGeneration.project_id) {
+      // Select the project if it's different
+      if (currentProject?.id !== runningGeneration.project_id) {
+        selectProject(runningGeneration.project_id);
+      }
+      // Navigate to generate-voice page
+      router.push('/generate-voice');
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -183,9 +226,35 @@ export default function Navigation() {
 
       {/* Footer */}
       <div className="p-6 border-t border-gray-800">
-        <div className="text-xs text-gray-500">
-          <p>Version 1.0.0</p>
-          <p className="mt-1">© 2025 VibeVoice</p>
+        <div className="flex items-center justify-between gap-3">
+          {/* Version Info */}
+          <div className="text-xs text-gray-500 flex-1">
+            <p>Version 1.0.0</p>
+            <p className="mt-1">© 2025 VibeVoice</p>
+          </div>
+
+          {/* Task Status Icon */}
+          <button
+            onClick={handleTaskIconClick}
+            disabled={!runningGeneration}
+            className={`relative p-2 rounded-lg transition-all ${
+              runningGeneration
+                ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                : 'bg-gray-800 text-gray-600 cursor-not-allowed'
+            }`}
+            title={runningGeneration ? 'View running generation task' : 'No running tasks'}
+          >
+            {/* Task/Activity Icon */}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            {/* Badge */}
+            {runningGeneration && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                1
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </nav>

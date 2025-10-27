@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSession } from "@/lib/SessionContext";
+import toast from "react-hot-toast";
 
 export default function SessionManager() {
   const { sessions, currentSession, selectSession, createSession, deleteSession, updateSession, loading, error } = useSession();
@@ -62,7 +63,7 @@ export default function SessionManager() {
         await deleteSession(sessionId);
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : "Failed to delete session");
-        alert(err instanceof Error ? err.message : "Failed to delete session");
+        toast.error(err instanceof Error ? err.message : "Failed to delete session");
       }
     }
   };

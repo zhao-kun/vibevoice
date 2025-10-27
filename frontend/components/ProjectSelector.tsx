@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useProject } from "@/lib/ProjectContext";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 export default function ProjectSelector() {
   const { projects, selectProject, createProject, deleteProject } = useProject();
@@ -26,7 +27,7 @@ export default function ProjectSelector() {
         // Will automatically navigate via the context update
         setTimeout(() => router.push("/voice-editor"), 100);
       } catch (err) {
-        alert("Failed to create project. Please try again.");
+        toast.error("Failed to create project. Please try again.");
       }
     }
   };
@@ -37,7 +38,7 @@ export default function ProjectSelector() {
       try {
         await deleteProject(projectId);
       } catch (err) {
-        alert("Failed to delete project. Please try again.");
+        toast.error("Failed to delete project. Please try again.");
       }
     }
   };

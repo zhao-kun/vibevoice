@@ -153,13 +153,14 @@ class VoiceGenerationService:
 
     def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42,
                    cfg_scale: float = 1.3, model_dtype: str = "float8_e4m3fn",
-                   attn_implementation: str = "sdpa") -> Generation:
+                   attn_implementation: str = "sdpa", project_id: str = None) -> Generation:
         """
         Generate voices for a specific dialog session
 
         Args:
             dialog_session_id: Dialog session identifier
             request_id: Request identifier
+            project_id: Project identifier
         """
 
         dialog_session = self.dialog_service.get_session(dialog_session_id)
@@ -167,11 +168,12 @@ class VoiceGenerationService:
             raise ValueError(f"Dialog session with ID '{dialog_session_id}' not found")
 
         # Placeholder for actual voice generation logic
-        generation = Generation.create(request_id, dialog_session_id, 
+        generation = Generation.create(request_id, dialog_session_id,
                                        seeds=seeds,
                                        cfg_scale=cfg_scale,
                                        model_dtype=model_dtype,
                                        attn_implementation=attn_implementation,
+                                       project_id=project_id,
                                        project_dir=str(self.output_dir))
         inference = InferenceBase.create(generation, self.speaker_service,
                                          self.dialog_service, self.meta_file_path,

@@ -6,6 +6,7 @@ import { useProject } from "@/lib/ProjectContext";
 import { api } from "@/lib/api";
 import AudioUploader from "./AudioUploader";
 import AudioPlayer from "./AudioPlayer";
+import toast from "react-hot-toast";
 
 export default function SpeakerRoleManager() {
   const { currentProject } = useProject();
@@ -34,7 +35,7 @@ export default function SpeakerRoleManager() {
 
   const handleDeleteRole = async (speakerId: string) => {
     if (speakerRoles.length === 1) {
-      alert("Cannot delete the last speaker role. At least one speaker is required.");
+      toast.error("Cannot delete the last speaker role. At least one speaker is required.");
       return;
     }
 
@@ -88,24 +89,19 @@ export default function SpeakerRoleManager() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex-shrink-0 border-b border-gray-200 bg-white p-4">
+      {/* Action Bar */}
+      <div className="flex-shrink-0 border-b border-gray-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Speaker Roles</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Manage speaker voices for your project. Speaker IDs are automatically assigned.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleAddSpeaker}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Adding..." : "+ Add Speaker"}
-            </button>
-          </div>
+          <p className="text-sm text-gray-600">
+            Speaker IDs are automatically assigned. Upload audio samples for each speaker.
+          </p>
+          <button
+            onClick={handleAddSpeaker}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? "Adding..." : "+ Add Speaker"}
+          </button>
         </div>
       </div>
 

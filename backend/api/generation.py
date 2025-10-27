@@ -63,7 +63,8 @@ def get_voice_generation_service(project_id: str):
                                                     seeds=seeds,
                                                     cfg_scale=cfg_scale,
                                                     model_dtype=model_dtype,
-                                                    attn_implementation=attn_implementation)
+                                                    attn_implementation=attn_implementation,
+                                                    project_id=project_id)
         if not generation:
             return jsonify({
                 'error': 'Generation Failed',

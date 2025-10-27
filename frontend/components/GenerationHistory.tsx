@@ -6,6 +6,7 @@ import { useGeneration } from '@/lib/GenerationContext';
 import { api } from '@/lib/api';
 import type { Generation } from '@/types/generation';
 import { InferencePhase } from '@/types/generation';
+import toast from 'react-hot-toast';
 
 function GenerationHistory() {
   const { currentProject } = useProject();
@@ -95,7 +96,7 @@ function GenerationHistory() {
       setSingleDeleteId(null);
     } catch (error) {
       console.error('Delete failed:', error);
-      alert(error instanceof Error ? error.message : 'Failed to delete generation(s)');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete generation(s)');
     }
   }, [deleteTarget, singleDeleteId, selectedIds, deleteGeneration, batchDeleteGenerations]);
 

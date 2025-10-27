@@ -36,6 +36,8 @@ export interface Generation {
   details: Record<string, any>;
   created_at: string;
   updated_at: string;
+  project_id?: string | null;
+  project_dir?: string | null;
 }
 
 /**
