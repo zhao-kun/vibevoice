@@ -275,3 +275,54 @@ def download_voice_file(project_id, speaker_id):
             'error': 'Failed to download voice file',
             'message': str(e)
         }), 500
+
+
+@api_bp.route('/projects/<project_id>/speakers/<speaker_id>/voice', methods=['PUT'])
+def update_voice_file(project_id, speaker_id):
+    """
+    Update speaker's voice file without changing speaker ID
+
+    Args:
+        project_id: Project identifier
+        speaker_id: Speaker identifier
+
+    Form data:
+        voice_file: New audio file (required)
+
+    Returns:
+        JSON response with updated speaker data
+    """
+    try:
+        service = get_speaker_service(project_id)
+        if not service:
+            return jsonify({
+                'error': 'Project not found',
+                'message': f'Project with ID "{project_id}" does not exist'
+            }), 404
+
+        voice_file = request.files.get('voice_file')
+        if not voice_file:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'Voice file is required'
+            }), 400
+
+        speaker = service.update_voice_file(speaker_id, voice_file)
+        if not speaker:
+            return jsonify({
+                'error': 'Speaker not found',
+                'message': f'Speaker with ID "{speaker_id}" does not exist'
+            }), 404
+
+        return jsonify(speaker.to_dict()), 200
+
+    except ValueError as e:
+        return jsonify({
+            'error': 'Validation Error',
+            'message': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'error': 'Failed to update voice file',
+            'message': str(e)
+        }), 500

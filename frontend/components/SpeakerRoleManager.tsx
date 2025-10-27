@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useSpeakerRole } from "@/lib/SpeakerRoleContext";
 import { useProject } from "@/lib/ProjectContext";
 import { api } from "@/lib/api";
@@ -16,12 +16,25 @@ export default function SpeakerRoleManager() {
     updateSpeakerRole,
     deleteSpeakerRole,
     uploadVoiceFile,
-    removeVoiceFile,
     loading,
     error,
   } = useSpeakerRole();
 
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Track local edits for descriptions
+  const [localDescriptions, setLocalDescriptions] = useState<Record<string, string>>({});
+  // Track saving state per speaker
+  const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
+
+  // Initialize local descriptions from speaker roles
+  useEffect(() => {
+    const descriptions: Record<string, string> = {};
+    speakerRoles.forEach(role => {
+      descriptions[role.speakerId] = role.description;
+    });
+    setLocalDescriptions(descriptions);
+  }, [speakerRoles]);
 
   const handleAddSpeaker = async () => {
     setLocalError(null);
@@ -52,28 +65,42 @@ export default function SpeakerRoleManager() {
     setLocalError(null);
     try {
       await uploadVoiceFile(speakerId, file);
+      toast.success("Voice file uploaded successfully");
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Failed to upload voice file");
+      toast.error(err instanceof Error ? err.message : "Failed to upload voice file");
     }
   };
 
-  const handleRemoveVoice = async (speakerId: string) => {
-    if (confirm("Are you sure you want to remove this voice file?")) {
-      setLocalError(null);
-      try {
-        await removeVoiceFile(speakerId);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : "Failed to remove voice file");
-      }
-    }
+  const handleUpdateDescription = (speakerId: string, description: string) => {
+    // Update local state only (no API call)
+    setLocalDescriptions(prev => ({
+      ...prev,
+      [speakerId]: description,
+    }));
   };
 
-  const handleUpdateDescription = async (speakerId: string, description: string) => {
+  const handleSaveSpeaker = async (speakerId: string) => {
+    const localDesc = localDescriptions[speakerId] || "";
+    const currentRole = speakerRoles.find(r => r.speakerId === speakerId);
+
+    if (!currentRole || localDesc === currentRole.description) {
+      return; // No changes to save
+    }
+
+    // Set saving state for this speaker
+    setSavingStates(prev => ({ ...prev, [speakerId]: true }));
     setLocalError(null);
+
     try {
-      await updateSpeakerRole(speakerId, { description });
+      await updateSpeakerRole(speakerId, { description: localDesc });
+      toast.success(`${speakerId} saved successfully`);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Failed to update description");
+      const errorMessage = err instanceof Error ? err.message : "Failed to save changes";
+      setLocalError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setSavingStates(prev => ({ ...prev, [speakerId]: false }));
     }
   };
 
@@ -146,15 +173,43 @@ export default function SpeakerRoleManager() {
                   </span>
                 </label>
                 <textarea
-                  value={role.description}
+                  value={localDescriptions[role.speakerId] || ""}
                   onChange={(e) =>
                     handleUpdateDescription(role.speakerId, e.target.value)
                   }
                   placeholder="e.g., Deep male voice, professional tone..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={2}
-                  disabled={loading}
+                  disabled={loading || savingStates[role.speakerId]}
                 />
+                {/* Save Button */}
+                {localDescriptions[role.speakerId] !== role.description && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      onClick={() => handleSaveSpeaker(role.speakerId)}
+                      disabled={savingStates[role.speakerId] || loading}
+                      className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {savingStates[role.speakerId] ? (
+                        <>
+                          <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Save Changes
+                        </>
+                      )}
+                    </button>
+                    <span className="text-xs text-orange-600">Unsaved changes</span>
+                  </div>
+                )}
               </div>
 
               {/* Voice File */}
@@ -164,9 +219,10 @@ export default function SpeakerRoleManager() {
                 </label>
                 {role.voiceFilename && currentProject ? (
                   <AudioPlayer
-                    voiceFileUrl={api.getVoiceFileUrl(currentProject.id, role.speakerId)}
+                    key={role.updatedAt || role.voiceFilename}
+                    voiceFileUrl={`${api.getVoiceFileUrl(currentProject.id, role.speakerId)}?t=${role.updatedAt || Date.now()}`}
                     voiceFileName={role.voiceFilename}
-                    onRemove={() => handleRemoveVoice(role.speakerId)}
+                    onChangeVoice={(file) => handleUploadVoice(role.speakerId, file)}
                   />
                 ) : (
                   <AudioUploader

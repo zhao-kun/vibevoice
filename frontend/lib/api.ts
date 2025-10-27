@@ -10,7 +10,12 @@ import type {
   GetGenerationResponse
 } from '@/types/generation';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+// API base URL configuration
+// Development: Full URL to backend server (different origin)
+// Production: Relative path (same origin, backend serves frontend)
+const API_BASE_URL = process.env.NODE_ENV === 'development'
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9527/api/v1')
+  : '/api/v1';
 
 export interface Project {
   id: string;
@@ -181,6 +186,31 @@ class ApiClient {
         method: 'DELETE',
       }
     );
+  }
+
+  async updateVoiceFile(
+    projectId: string,
+    speakerId: string,
+    voiceFile: File
+  ): Promise<Speaker> {
+    const formData = new FormData();
+    formData.append('voice_file', voiceFile);
+
+    const url = `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/speakers/${encodeURIComponent(speakerId)}/voice`;
+    const response = await fetch(url, {
+      method: 'PUT',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        error: 'Unknown error',
+        message: response.statusText
+      }));
+      throw new Error(error.message || error.error || response.statusText);
+    }
+
+    return await response.json();
   }
 
   getVoiceFileUrl(projectId: string, speakerId: string): string {

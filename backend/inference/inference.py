@@ -104,7 +104,7 @@ class InferenceBase(ABC):
                                  cfg_scale=self.generation.cfg_scale,
                                  tokenizer=processor.tokenizer,
                                  generation_config={'do_sample': False},
-                                 verbose=True,
+                                 verbose=False,
                                  status_update=status_update)
         generation_time = time.time() - start_time
         self._save_audio(outputs, processor, status_update, generation_time, 

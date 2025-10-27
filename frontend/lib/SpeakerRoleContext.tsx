@@ -11,7 +11,6 @@ interface SpeakerRoleContextType {
   updateSpeakerRole: (speakerId: string, updates: Partial<SpeakerRole>) => Promise<void>;
   deleteSpeakerRole: (speakerId: string) => Promise<void>;
   uploadVoiceFile: (speakerId: string, file: File) => Promise<void>;
-  removeVoiceFile: (speakerId: string) => Promise<void>;
   hasUnsavedChanges: boolean;
   loading: boolean;
   error: string | null;
@@ -172,26 +171,22 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
           description: currentRole.description,
           voice_file: file,
         });
+
+        // Reload all speakers to get the newly created speaker with proper ID
+        const response = await api.listSpeakers(projectId);
+        const roles = response.speakers.map(backendToFrontend);
+        setSpeakerRoles(roles);
       } else {
-        // Backend doesn't support updating voice files directly
-        // We need to delete the old speaker and create a new one
-        // This will trigger auto-reindexing
+        // Update existing speaker's voice file (keeps speaker ID)
+        const updatedSpeaker = await api.updateVoiceFile(projectId, speakerId, file);
 
-        // Step 1: Delete the existing speaker
-        await api.deleteSpeaker(projectId, speakerId);
-
-        // Step 2: Create a new speaker with the same data but new voice file
-        await api.createSpeaker(projectId, {
-          name: currentRole.name,
-          description: currentRole.description,
-          voice_file: file,
-        });
+        // Update in local state
+        setSpeakerRoles(roles =>
+          roles.map(role =>
+            role.speakerId === speakerId ? backendToFrontend(updatedSpeaker) : role
+          )
+        );
       }
-
-      // Step 3: Reload all speakers to get updated speaker_ids
-      const response = await api.listSpeakers(projectId);
-      const roles = response.speakers.map(backendToFrontend);
-      setSpeakerRoles(roles);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to upload voice file";
       setError(errorMessage);
@@ -199,20 +194,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
     } finally {
       setLoading(false);
     }
-  };
-
-  const removeVoiceFile = async (speakerId: string): Promise<void> => {
-    setError(null);
-
-    // For now, just update local state
-    // Backend doesn't have a separate endpoint to remove voice file
-    // User would need to delete and recreate the speaker
-    setSpeakerRoles(roles =>
-      roles.map(role =>
-        role.speakerId === speakerId ? { ...role, voiceFilename: null, voiceFile: null } : role
-      )
-    );
-    setHasUnsavedChanges(true);
   };
 
   return (
@@ -223,7 +204,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
         updateSpeakerRole,
         deleteSpeakerRole,
         uploadVoiceFile,
-        removeVoiceFile,
         hasUnsavedChanges,
         loading,
         error,

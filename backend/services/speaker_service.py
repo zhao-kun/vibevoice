@@ -222,6 +222,73 @@ class SpeakerService:
                 return speaker
         return None
 
+    def update_voice_file(self, speaker_id: str, voice_file: FileStorage) -> Optional[SpeakerRole]:
+        """
+        Update speaker's voice file without changing speaker ID
+
+        Args:
+            speaker_id: Speaker identifier
+            voice_file: New voice file to upload
+
+        Returns:
+            Updated SpeakerRole object or None if not found
+
+        Raises:
+            ValueError: If validation fails
+            RuntimeError: If operation fails
+        """
+        if not voice_file or not voice_file.filename:
+            raise ValueError("Voice file is required")
+
+        # Validate file extension
+        if not self._validate_audio_file(voice_file.filename):
+            raise ValueError(f"Invalid audio file. Allowed extensions: {', '.join(self.ALLOWED_EXTENSIONS)}")
+
+        speakers = self.list_speakers()
+
+        # Find the speaker
+        speaker_to_update = None
+        for speaker in speakers:
+            if speaker.speaker_id == speaker_id:
+                speaker_to_update = speaker
+                break
+
+        if not speaker_to_update:
+            return None
+
+        # Generate unique filename for new voice file
+        ext = Path(voice_file.filename).suffix.lower()
+        unique_filename = f"{uuid.uuid4().hex}{ext}"
+        new_file_path = self.voices_dir / unique_filename
+
+        # Keep track of old voice file
+        old_voice_filename = speaker_to_update.voice_filename
+        old_file_path = self.voices_dir / old_voice_filename
+
+        try:
+            # Save new voice file
+            voice_file.save(str(new_file_path))
+
+            # Update speaker metadata with new filename
+            speaker_to_update.voice_filename = unique_filename
+            speaker_to_update.update()  # Update timestamp
+
+            # Save updated metadata atomically
+            metadata = [s.to_dict() for s in speakers]
+            self._save_metadata(metadata)
+
+            # Delete old voice file after successful save
+            if old_file_path.exists():
+                old_file_path.unlink()
+
+            return speaker_to_update
+
+        except Exception as e:
+            # Cleanup new file if something failed
+            if new_file_path.exists():
+                new_file_path.unlink()
+            raise RuntimeError(f"Failed to update voice file: {str(e)}")
+
     def delete_speaker(self, speaker_id: str) -> bool:
         """
         Delete speaker role and its voice file

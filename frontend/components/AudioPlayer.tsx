@@ -5,11 +5,12 @@ import React, { useRef, useState, useEffect } from "react";
 interface AudioPlayerProps {
   voiceFileUrl: string; // URL to fetch the audio file from backend
   voiceFileName: string; // Original filename
-  onRemove: () => void;
+  onChangeVoice: (file: File) => void;
 }
 
-export default function AudioPlayer({ voiceFileUrl, voiceFileName, onRemove }: AudioPlayerProps) {
+export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -95,9 +96,29 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onRemove }: A
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
+  const handleChangeVoiceClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onChangeVoice(file);
+    }
+    // Reset input so the same file can be selected again
+    e.target.value = '';
+  };
+
   return (
     <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
       <audio ref={audioRef} src={voiceFileUrl} preload="metadata" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/wav,audio/mp3,audio/m4a,audio/flac"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
 
       <div className="flex items-center justify-between mb-3">
         <div className="flex-1 min-w-0">
@@ -109,13 +130,13 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onRemove }: A
           </p>
         </div>
         <button
-          onClick={onRemove}
-          className="ml-2 flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 hover:border-red-300"
+          onClick={handleChangeVoiceClick}
+          className="ml-2 flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 hover:border-blue-300"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
-          Remove
+          Change Voice
         </button>
       </div>
 
