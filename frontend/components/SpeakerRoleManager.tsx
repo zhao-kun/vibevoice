@@ -26,6 +26,9 @@ export default function SpeakerRoleManager() {
   const [localDescriptions, setLocalDescriptions] = useState<Record<string, string>>({});
   // Track saving state per speaker
   const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
+  // Delete confirmation dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   // Initialize local descriptions from speaker roles
   useEffect(() => {
@@ -45,20 +48,35 @@ export default function SpeakerRoleManager() {
     }
   };
 
-  const handleDeleteRole = async (speakerId: string) => {
+  const handleDeleteClick = (speakerId: string) => {
     if (speakerRoles.length === 1) {
       toast.error("Cannot delete the last speaker role. At least one speaker is required.");
       return;
     }
 
-    if (confirm("Are you sure you want to delete this speaker role? This will also delete the voice file. This action cannot be undone.")) {
-      setLocalError(null);
-      try {
-        await deleteSpeakerRole(speakerId);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : "Failed to delete speaker");
-      }
+    setDeleteTargetId(speakerId);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
+
+    setLocalError(null);
+    try {
+      await deleteSpeakerRole(deleteTargetId);
+      toast.success("Speaker deleted successfully");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to delete speaker");
+      toast.error(err instanceof Error ? err.message : "Failed to delete speaker");
+    } finally {
+      setShowDeleteDialog(false);
+      setDeleteTargetId(null);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteDialog(false);
+    setDeleteTargetId(null);
   };
 
   const handleUploadVoice = async (speakerId: string, file: File) => {
@@ -153,7 +171,7 @@ export default function SpeakerRoleManager() {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDeleteRole(role.speakerId)}
+                  onClick={() => handleDeleteClick(role.speakerId)}
                   disabled={loading}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -248,6 +266,32 @@ export default function SpeakerRoleManager() {
           <p className="text-sm text-blue-800">
             Syncing with server...
           </p>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-2">Confirm Deletion</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete this speaker role? This will also delete the voice file and subsequent speakers will be reindexed. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelDelete}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
