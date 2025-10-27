@@ -224,6 +224,7 @@ backend/.env
 backend/uploads/
 backend/__pycache__/
 backend/**/__pycache__/
+!backend/models/
 
 !frontend/lib/
 
