@@ -11,6 +11,7 @@ interface SpeakerRoleContextType {
   updateSpeakerRole: (speakerId: string, updates: Partial<SpeakerRole>) => Promise<void>;
   deleteSpeakerRole: (speakerId: string) => Promise<void>;
   uploadVoiceFile: (speakerId: string, file: File) => Promise<void>;
+  removeVoiceFile: (speakerId: string) => Promise<void>;
   trimAudio: (speakerId: string, startTime: number, endTime: number) => Promise<void>;
   hasUnsavedChanges: boolean;
   loading: boolean;
@@ -197,6 +198,20 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
     }
   };
 
+  const removeVoiceFile = async (speakerId: string): Promise<void> => {
+    setError(null);
+
+    // Just clear the voiceFilename in local state (no backend call)
+    // This allows user to go back to upload/record tabs
+    setSpeakerRoles(roles =>
+      roles.map(role =>
+        role.speakerId === speakerId
+          ? { ...role, voiceFilename: null, voiceFile: null }
+          : role
+      )
+    );
+  };
+
   const trimAudio = async (speakerId: string, startTime: number, endTime: number): Promise<void> => {
     setLoading(true);
     setError(null);
@@ -228,6 +243,7 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
         updateSpeakerRole,
         deleteSpeakerRole,
         uploadVoiceFile,
+        removeVoiceFile,
         trimAudio,
         hasUnsavedChanges,
         loading,

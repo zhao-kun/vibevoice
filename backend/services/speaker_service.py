@@ -16,7 +16,7 @@ class SpeakerService:
     """Service for managing speaker roles and voice files"""
 
     SPEAKERS_META_FILE = 'speakers.json'
-    ALLOWED_EXTENSIONS = {'.wav', '.mp3', '.m4a', '.flac'}
+    ALLOWED_EXTENSIONS = {'.wav', '.mp3', '.m4a', '.flac', '.webm'}
 
     def __init__(self, project_voices_dir: Path):
         """

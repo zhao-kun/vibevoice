@@ -9,9 +9,10 @@ interface AudioPlayerProps {
   voiceFileName: string; // Original filename
   onChangeVoice: (file: File) => void;
   onTrimAudio?: (startTime: number, endTime: number) => void;
+  onRemoveVoice?: () => void;
 }
 
-export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice, onTrimAudio }: AudioPlayerProps) {
+export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice, onTrimAudio, onRemoveVoice }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const waveformRef = useRef<HTMLDivElement>(null);
@@ -177,7 +178,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
 
     setIsTrimming(true);
     try {
-      await onTrimAudio(selectedRegion.start, selectedRegion.end);
+      onTrimAudio(selectedRegion.start, selectedRegion.end);
       setEditMode(false);
       setSelectedRegion(null);
     } catch (error) {
@@ -213,7 +214,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
       <input
         ref={fileInputRef}
         type="file"
-        accept="audio/wav,audio/mp3,audio/m4a,audio/flac"
+        accept="audio/wav,audio/mp3,audio/m4a,audio/flac,audio/webm"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -252,6 +253,17 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
             </svg>
             Change Voice
           </button>
+          {onRemoveVoice && (
+            <button
+              onClick={onRemoveVoice}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-white hover:bg-red-50 rounded-lg transition-colors border border-red-300 hover:border-red-400"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Remove Voice
+            </button>
+          )}
         </div>
       </div>
 

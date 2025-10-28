@@ -6,6 +6,7 @@ import { useProject } from "@/lib/ProjectContext";
 import { api } from "@/lib/api";
 import AudioUploader from "./AudioUploader";
 import AudioPlayer from "./AudioPlayer";
+import VoiceRecorder from "./VoiceRecorder";
 import toast from "react-hot-toast";
 
 export default function SpeakerRoleManager() {
@@ -16,6 +17,7 @@ export default function SpeakerRoleManager() {
     updateSpeakerRole,
     deleteSpeakerRole,
     uploadVoiceFile,
+    removeVoiceFile,
     trimAudio,
     loading,
     error,
@@ -30,6 +32,8 @@ export default function SpeakerRoleManager() {
   // Delete confirmation dialog state
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // Track input method per speaker (upload or record)
+  const [inputMethod, setInputMethod] = useState<Record<string, 'upload' | 'record'>>({});
 
   // Initialize local descriptions from speaker roles
   useEffect(() => {
@@ -99,6 +103,17 @@ export default function SpeakerRoleManager() {
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Failed to trim audio");
       toast.error(err instanceof Error ? err.message : "Failed to trim audio");
+    }
+  };
+
+  const handleRemoveVoice = async (speakerId: string) => {
+    setLocalError(null);
+    try {
+      await removeVoiceFile(speakerId);
+      toast.success("Voice removed successfully");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to remove voice");
+      toast.error(err instanceof Error ? err.message : "Failed to remove voice");
     }
   };
 
@@ -254,11 +269,55 @@ export default function SpeakerRoleManager() {
                     voiceFileName={role.voiceFilename}
                     onChangeVoice={(file) => handleUploadVoice(role.speakerId, file)}
                     onTrimAudio={(startTime, endTime) => handleTrimAudio(role.speakerId, startTime, endTime)}
+                    onRemoveVoice={() => handleRemoveVoice(role.speakerId)}
                   />
                 ) : (
-                  <AudioUploader
-                    onUpload={(file) => handleUploadVoice(role.speakerId, file)}
-                  />
+                  <div>
+                    {/* Tabs for Upload/Record */}
+                    <div className="flex border-b border-gray-200 mb-4">
+                      <button
+                        onClick={() => setInputMethod(prev => ({ ...prev, [role.speakerId]: 'upload' }))}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                          (inputMethod[role.speakerId] || 'upload') === 'upload'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          Upload File
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setInputMethod(prev => ({ ...prev, [role.speakerId]: 'record' }))}
+                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                          inputMethod[role.speakerId] === 'record'
+                            ? 'border-blue-600 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                          </svg>
+                          Record Voice
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Content based on selected tab */}
+                    {(inputMethod[role.speakerId] || 'upload') === 'upload' ? (
+                      <AudioUploader
+                        onUpload={(file) => handleUploadVoice(role.speakerId, file)}
+                      />
+                    ) : (
+                      <VoiceRecorder
+                        onSave={(file) => handleUploadVoice(role.speakerId, file)}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             </div>

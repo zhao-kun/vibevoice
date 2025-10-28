@@ -30,6 +30,6 @@ export interface VoiceFile {
   uploadedAt: string; // ISO timestamp
 }
 
-export type AudioFileExtension = '.wav' | '.mp3' | '.m4a' | '.flac';
-export const ACCEPTED_AUDIO_TYPES = ['audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/flac'];
-export const ACCEPTED_AUDIO_EXTENSIONS: AudioFileExtension[] = ['.wav', '.mp3', '.m4a', '.flac'];
+export type AudioFileExtension = '.wav' | '.mp3' | '.m4a' | '.flac' | '.webm';
+export const ACCEPTED_AUDIO_TYPES = ['audio/wav', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/flac', 'audio/webm'];
+export const ACCEPTED_AUDIO_EXTENSIONS: AudioFileExtension[] = ['.wav', '.mp3', '.m4a', '.flac', '.webm'];
