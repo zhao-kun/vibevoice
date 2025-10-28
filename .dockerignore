@@ -1,0 +1,9 @@
+# This .dockerignore is mostly irrelevant since we don't COPY from local context
+# The Dockerfile clones everything from GitHub
+# However, we keep this to prevent accidentally copying if someone modifies the Dockerfile
+
+# Everything - we clone from GitHub instead
+*
+
+# Exception: Allow Dockerfile itself for reference (not actually copied in our Dockerfile)
+!Dockerfile
