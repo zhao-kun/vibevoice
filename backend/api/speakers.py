@@ -326,3 +326,70 @@ def update_voice_file(project_id, speaker_id):
             'error': 'Failed to update voice file',
             'message': str(e)
         }), 500
+
+
+@api_bp.route('/projects/<project_id>/speakers/<speaker_id>/voice/trim', methods=['POST'])
+def trim_voice_file(project_id, speaker_id):
+    """
+    Trim speaker's voice file to a specific time range
+
+    Args:
+        project_id: Project identifier
+        speaker_id: Speaker identifier
+
+    JSON body:
+        start_time: Start time in seconds (required)
+        end_time: End time in seconds (required)
+
+    Returns:
+        JSON response with updated speaker data
+    """
+    try:
+        service = get_speaker_service(project_id)
+        if not service:
+            return jsonify({
+                'error': 'Project not found',
+                'message': f'Project with ID "{project_id}" does not exist'
+            }), 404
+
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'JSON body is required'
+            }), 400
+
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+
+        if start_time is None or end_time is None:
+            return jsonify({
+                'error': 'Bad Request',
+                'message': 'start_time and end_time are required'
+            }), 400
+
+        if start_time < 0 or end_time <= start_time:
+            return jsonify({
+                'error': 'Validation Error',
+                'message': 'Invalid time range: end_time must be greater than start_time and both must be non-negative'
+            }), 400
+
+        speaker = service.trim_voice_file(speaker_id, start_time, end_time)
+        if not speaker:
+            return jsonify({
+                'error': 'Speaker not found',
+                'message': f'Speaker with ID "{speaker_id}" does not exist'
+            }), 404
+
+        return jsonify(speaker.to_dict()), 200
+
+    except ValueError as e:
+        return jsonify({
+            'error': 'Validation Error',
+            'message': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'error': 'Failed to trim voice file',
+            'message': str(e)
+        }), 500

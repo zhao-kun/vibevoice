@@ -16,6 +16,7 @@ export default function SpeakerRoleManager() {
     updateSpeakerRole,
     deleteSpeakerRole,
     uploadVoiceFile,
+    trimAudio,
     loading,
     error,
   } = useSpeakerRole();
@@ -87,6 +88,17 @@ export default function SpeakerRoleManager() {
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Failed to upload voice file");
       toast.error(err instanceof Error ? err.message : "Failed to upload voice file");
+    }
+  };
+
+  const handleTrimAudio = async (speakerId: string, startTime: number, endTime: number) => {
+    setLocalError(null);
+    try {
+      await trimAudio(speakerId, startTime, endTime);
+      toast.success("Voice trimmed successfully");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Failed to trim audio");
+      toast.error(err instanceof Error ? err.message : "Failed to trim audio");
     }
   };
 
@@ -241,6 +253,7 @@ export default function SpeakerRoleManager() {
                     voiceFileUrl={`${api.getVoiceFileUrl(currentProject.id, role.speakerId)}?t=${role.updatedAt || Date.now()}`}
                     voiceFileName={role.voiceFilename}
                     onChangeVoice={(file) => handleUploadVoice(role.speakerId, file)}
+                    onTrimAudio={(startTime, endTime) => handleTrimAudio(role.speakerId, startTime, endTime)}
                   />
                 ) : (
                   <AudioUploader

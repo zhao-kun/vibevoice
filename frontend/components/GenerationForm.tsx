@@ -70,6 +70,11 @@ export default function GenerationForm() {
     }
   };
 
+  const generateRandomSeed = () => {
+    const randomSeed = Math.floor(Math.random() * 1000000);
+    setFormData(prev => ({ ...prev, seeds: randomSeed }));
+  };
+
   return (
     <div className="border border-gray-300 rounded-lg p-6 bg-white">
       <h2 className="text-xl font-semibold mb-4">Start New Generation</h2>
@@ -150,16 +155,35 @@ export default function GenerationForm() {
           <label htmlFor="seeds" className="block text-sm font-medium text-gray-700 mb-1">
             Random Seed <span className="text-red-500">*</span>
           </label>
-          <input
-            type="number"
-            id="seeds"
-            name="seeds"
-            value={formData.seeds}
-            onChange={handleChange}
-            min="0"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              id="seeds"
+              name="seeds"
+              value={formData.seeds}
+              onChange={handleChange}
+              min="0"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <button
+              type="button"
+              onClick={generateRandomSeed}
+              className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              title="Generate random seed"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 512 512"
+                className="w-5 h-5"
+              >
+                <path
+                  d="M302.87 255.5a47.37 47.37 0 1 1-47.37-47.37 47.37 47.37 0 0 1 47.37 47.37zM128.5 81.18a47.37 47.37 0 1 0 47.41 47.32 47.37 47.37 0 0 0-47.41-47.32zm253.91 0a47.37 47.37 0 1 0 47.41 47.32 47.37 47.37 0 0 0-47.32-47.32zM128.5 335.09a47.37 47.37 0 1 0 47.41 47.41 47.37 47.37 0 0 0-47.41-47.41zm253.91 0a47.37 47.37 0 1 0 47.41 47.41 47.37 47.37 0 0 0-47.32-47.41zm102 92.93a56.48 56.48 0 0 1-56.39 56.48h-344a56.48 56.48 0 0 1-56.52-56.48v-344A56.48 56.48 0 0 1 83.98 27.5h344a56.48 56.48 0 0 1 56.52 56.48zm-20-344a36.48 36.48 0 0 0-36.39-36.52h-344A36.48 36.48 0 0 0 47.5 83.98v344a36.48 36.48 0 0 0 36.48 36.52h344a36.48 36.48 0 0 0 36.52-36.48z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
+          </div>
           <p className="text-xs text-gray-500 mt-1">
             Random seed for reproducible generation (default: 42)
           </p>

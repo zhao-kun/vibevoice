@@ -11,6 +11,7 @@ interface SpeakerRoleContextType {
   updateSpeakerRole: (speakerId: string, updates: Partial<SpeakerRole>) => Promise<void>;
   deleteSpeakerRole: (speakerId: string) => Promise<void>;
   uploadVoiceFile: (speakerId: string, file: File) => Promise<void>;
+  trimAudio: (speakerId: string, startTime: number, endTime: number) => Promise<void>;
   hasUnsavedChanges: boolean;
   loading: boolean;
   error: string | null;
@@ -196,6 +197,29 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
     }
   };
 
+  const trimAudio = async (speakerId: string, startTime: number, endTime: number): Promise<void> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Call backend API to trim audio
+      const updatedSpeaker = await api.trimVoiceFile(projectId, speakerId, startTime, endTime);
+
+      // Update in local state
+      setSpeakerRoles(roles =>
+        roles.map(role =>
+          role.speakerId === speakerId ? backendToFrontend(updatedSpeaker) : role
+        )
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to trim audio";
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SpeakerRoleContext.Provider
       value={{
@@ -204,6 +228,7 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
         updateSpeakerRole,
         deleteSpeakerRole,
         uploadVoiceFile,
+        trimAudio,
         hasUnsavedChanges,
         loading,
         error,

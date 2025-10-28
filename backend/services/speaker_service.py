@@ -2,6 +2,8 @@
 Speaker role management service - handles business logic for speaker roles
 """
 import uuid
+import wave
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from werkzeug.datastructures import FileStorage
@@ -288,6 +290,110 @@ class SpeakerService:
             if new_file_path.exists():
                 new_file_path.unlink()
             raise RuntimeError(f"Failed to update voice file: {str(e)}")
+
+    def trim_voice_file(self, speaker_id: str, start_time: float, end_time: float) -> Optional[SpeakerRole]:
+        """
+        Trim speaker's voice file to a specific time range
+
+        Args:
+            speaker_id: Speaker identifier
+            start_time: Start time in seconds
+            end_time: End time in seconds
+
+        Returns:
+            Updated SpeakerRole object or None if not found
+
+        Raises:
+            ValueError: If validation fails
+            RuntimeError: If operation fails
+        """
+        if start_time < 0 or end_time <= start_time:
+            raise ValueError("Invalid time range: end_time must be greater than start_time")
+
+        speakers = self.list_speakers()
+
+        # Find the speaker
+        speaker_to_update = None
+        for speaker in speakers:
+            if speaker.speaker_id == speaker_id:
+                speaker_to_update = speaker
+                break
+
+        if not speaker_to_update:
+            return None
+
+        # Get current voice file path
+        current_file_path = self.voices_dir / speaker_to_update.voice_filename
+        if not current_file_path.exists():
+            raise ValueError(f"Voice file not found: {speaker_to_update.voice_filename}")
+
+        # Check if file is WAV
+        if current_file_path.suffix.lower() != '.wav':
+            raise ValueError("Only WAV files are supported for trimming")
+
+        try:
+            # Open source WAV file
+            with wave.open(str(current_file_path), 'rb') as src_wav:
+                # Get audio parameters
+                params = src_wav.getparams()
+                framerate = params.framerate
+                nchannels = params.nchannels
+                sampwidth = params.sampwidth
+
+                # Calculate frame positions
+                start_frame = int(start_time * framerate)
+                end_frame = int(end_time * framerate)
+
+                # Validate frame positions
+                total_frames = src_wav.getnframes()
+                if end_frame > total_frames:
+                    end_frame = total_frames
+
+                if start_frame >= total_frames:
+                    raise ValueError(f"Start time ({start_time}s) exceeds audio duration")
+
+                # Read the frames we want to keep
+                src_wav.setpos(start_frame)
+                frames_to_read = end_frame - start_frame
+                audio_data = src_wav.readframes(frames_to_read)
+
+            # Generate unique filename for trimmed file
+            unique_filename = f"{uuid.uuid4().hex}.wav"
+            new_file_path = self.voices_dir / unique_filename
+
+            # Write trimmed audio to new file
+            with wave.open(str(new_file_path), 'wb') as dst_wav:
+                dst_wav.setparams(params)
+                dst_wav.writeframes(audio_data)
+
+            # Keep track of old voice file
+            old_voice_filename = speaker_to_update.voice_filename
+            old_file_path = self.voices_dir / old_voice_filename
+
+            # Update speaker metadata with new filename
+            speaker_to_update.voice_filename = unique_filename
+            speaker_to_update.update()  # Update timestamp
+
+            # Save updated metadata atomically
+            metadata = [s.to_dict() for s in speakers]
+            self._save_metadata(metadata)
+
+            # Delete old voice file after successful save
+            if old_file_path.exists():
+                old_file_path.unlink()
+
+            return speaker_to_update
+
+        except wave.Error as e:
+            # Cleanup new file if it was created
+            if 'new_file_path' in locals() and new_file_path.exists():
+                new_file_path.unlink()
+            raise RuntimeError(f"Failed to process WAV file: {str(e)}")
+        except Exception as e:
+            # Cleanup new file if it was created
+            if 'new_file_path' in locals() and new_file_path.exists():
+                new_file_path.unlink()
+            raise RuntimeError(f"Failed to trim voice file: {str(e)}")
 
     def delete_speaker(self, speaker_id: str) -> bool:
         """

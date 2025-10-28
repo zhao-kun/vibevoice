@@ -213,6 +213,21 @@ class ApiClient {
     return await response.json();
   }
 
+  async trimVoiceFile(
+    projectId: string,
+    speakerId: string,
+    startTime: number,
+    endTime: number
+  ): Promise<Speaker> {
+    return this.fetch(
+      `/projects/${encodeURIComponent(projectId)}/speakers/${encodeURIComponent(speakerId)}/voice/trim`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ start_time: startTime, end_time: endTime }),
+      }
+    );
+  }
+
   getVoiceFileUrl(projectId: string, speakerId: string): string {
     return `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/speakers/${encodeURIComponent(speakerId)}/voice`;
   }

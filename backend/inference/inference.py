@@ -99,6 +99,7 @@ class InferenceBase(ABC):
         model = self._load_model(dtype=load_dtype)
 
         start_time = time.time()
+
         outputs = model.generate(**inputs,
                                  max_new_tokens=None,
                                  cfg_scale=self.generation.cfg_scale,
@@ -106,6 +107,7 @@ class InferenceBase(ABC):
                                  generation_config={'do_sample': False},
                                  verbose=False,
                                  status_update=status_update)
+
         generation_time = time.time() - start_time
         self._save_audio(outputs, processor, status_update, generation_time, 
                          inputs['input_ids'].shape[1],

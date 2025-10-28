@@ -69,8 +69,8 @@ function GenerateVoiceContent() {
             <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-900 mb-2">Model Information</h3>
               <div className="text-xs text-gray-700 space-y-1">
-                <p><strong>float8_e4m3fn:</strong> Optimized 8-bit model, faster with less memory</p>
-                <p><strong>bf16:</strong> Full precision model, higher quality but slower</p>
+                <p><strong>float8_e4m3fn:</strong> Optimized 8-bit model, Load faster with less memory and slow inferencing</p>
+                <p><strong>bf16:</strong> Full precision model, higher quality but slower loading and faster inferencing</p>
                 <p><strong>CFG Scale:</strong> Controls adherence to input (1.0-3.0 recommended)</p>
                 <p><strong>Seed:</strong> Random seed for reproducible results</p>
               </div>
