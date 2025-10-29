@@ -416,7 +416,8 @@ class VibeVoiceForConditionalInference(nn.Module):
         if profile:
             import time as time_module
             timing_stats = {
-                'transformer': [],
+                'transformer_positive': [],
+                'transformer_negative': [],
                 'diffusion': [],
                 'audio_decode': [],
                 'semantic_encode': [],
@@ -515,7 +516,7 @@ class VibeVoiceForConditionalInference(nn.Module):
             )
             if profile:
                 transformer_time = (time_module.time() - transformer_start) * 1000
-                timing_stats['transformer'].append(transformer_time)
+                timing_stats['transformer_positive'].append(transformer_time)
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=False,
             )
@@ -548,9 +549,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                     negative_model_inputs['inputs_embeds'] = inputs_embeds
                     negative_model_inputs['input_ids'] = None
 
+                if profile:
+                    neg_transformer_start = time_module.time()
                 negative_outputs = self(
                     **negative_model_inputs, logits_to_keep=0, return_dict=True, output_attentions=False, output_hidden_states=False,
                 )
+                if profile:
+                    neg_transformer_time = (time_module.time() - neg_transformer_start) * 1000
+                    timing_stats['transformer_negative'].append(neg_transformer_time)
                 negative_model_kwargs = self._update_model_kwargs_for_generation(
                     negative_outputs, negative_model_kwargs, is_encoder_decoder=False,
                 )
@@ -621,9 +627,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                         negative_model_inputs['inputs_embeds'] = inputs_embeds
                         negative_model_inputs['input_ids'] = None
 
+                    if profile:
+                        neg_transformer_start = time_module.time()
                     negative_outputs = self(
                         **negative_model_inputs, logits_to_keep=0, return_dict=True, output_attentions=False, output_hidden_states=False,
                     )
+                    if profile:
+                        neg_transformer_time = (time_module.time() - neg_transformer_start) * 1000
+                        timing_stats['transformer_negative'].append(neg_transformer_time)
                     negative_model_kwargs = self._update_model_kwargs_for_generation(
                         negative_outputs, negative_model_kwargs, is_encoder_decoder=False,
                     )
@@ -735,17 +746,24 @@ class VibeVoiceForConditionalInference(nn.Module):
             # Print timing summary every 10 tokens
             if profile:
                 timing_token_count += 1
-                if timing_token_count % 10 == 0 and timing_stats['transformer']:
+                if timing_token_count % 10 == 0 and timing_stats['transformer_positive']:
                     print("\n" + "="*80)
                     print(f"TIMING SUMMARY - Token {timing_token_count}")
                     print("="*80)
-                    for key in ['transformer', 'diffusion', 'audio_decode', 'semantic_encode']:
+                    for key in ['transformer_positive', 'transformer_negative', 'diffusion', 'audio_decode', 'semantic_encode']:
                         if timing_stats[key]:
-                            # Average over last 10 tokens
+                            # Average over last 10 calls
                             recent_times = timing_stats[key][-10:] if len(timing_stats[key]) >= 10 else timing_stats[key]
                             avg_time = sum(recent_times) / len(recent_times)
                             count = len(timing_stats[key])
-                            print(f"{key.replace('_', ' ').title():<20}: {avg_time:7.2f}ms avg (last {len(recent_times)} tokens, {count} total calls)")
+                            print(f"{key.replace('_', ' ').title():<25}: {avg_time:7.2f}ms avg (last {len(recent_times)} calls, {count} total)")
+
+                    # Calculate total transformer time
+                    if timing_stats['transformer_positive'] or timing_stats['transformer_negative']:
+                        total_transformer = sum(timing_stats['transformer_positive']) + sum(timing_stats['transformer_negative'])
+                        total_calls = len(timing_stats['transformer_positive']) + len(timing_stats['transformer_negative'])
+                        avg_transformer = total_transformer / total_calls if total_calls > 0 else 0
+                        print(f"{'Total Transformer':<25}: {avg_transformer:7.2f}ms avg ({total_calls} total forwards)")
                     print("="*80 + "\n")
 
         if audio_streamer is not None:
@@ -767,22 +785,29 @@ class VibeVoiceForConditionalInference(nn.Module):
             print("\n" + "="*80)
             print("FINAL GENERATION TIMING BREAKDOWN (Overall Averages)")
             print("="*80)
-            for key in ['transformer', 'diffusion', 'audio_decode', 'semantic_encode']:
+            for key in ['transformer_positive', 'transformer_negative', 'diffusion', 'audio_decode', 'semantic_encode']:
                 if timing_stats[key]:
                     avg_time = sum(timing_stats[key]) / len(timing_stats[key])
                     total_time = sum(timing_stats[key])
                     count = len(timing_stats[key])
-                    print(f"{key.replace('_', ' ').title():<20}: {avg_time:7.2f}ms avg  ({total_time:8.1f}ms total, {count} calls)")
+                    print(f"{key.replace('_', ' ').title():<25}: {avg_time:7.2f}ms avg  ({total_time:8.1f}ms total, {count} calls)")
 
-            # Calculate totals
+            # Calculate transformer totals
+            if timing_stats['transformer_positive'] or timing_stats['transformer_negative']:
+                total_transformer_time = sum(timing_stats['transformer_positive']) + sum(timing_stats['transformer_negative'])
+                total_transformer_calls = len(timing_stats['transformer_positive']) + len(timing_stats['transformer_negative'])
+                avg_transformer_time = total_transformer_time / total_transformer_calls if total_transformer_calls > 0 else 0
+                print(f"\n{'Total Transformer':<25}: {avg_transformer_time:7.2f}ms avg  ({total_transformer_time:8.1f}ms total, {total_transformer_calls} forwards)")
+
+            # Calculate grand totals
             all_times = []
             for times in timing_stats.values():
                 all_times.extend(times)
             if all_times:
                 total_measured = sum(all_times)
                 avg_per_token = total_measured / timing_token_count if timing_token_count > 0 else 0
-                print(f"\n{'Total measured':<20}: {total_measured:8.1f}ms ({avg_per_token:.1f}ms per token avg)")
-                print(f"{'Tokens generated':<20}: {timing_token_count}")
+                print(f"{'Total Measured':<25}: {total_measured:8.1f}ms ({avg_per_token:.1f}ms per token avg)")
+                print(f"{'Tokens Generated':<25}: {timing_token_count}")
             print("="*80 + "\n")
 
         return VibeVoiceGenerationOutput(
