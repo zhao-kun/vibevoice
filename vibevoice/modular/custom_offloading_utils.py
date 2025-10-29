@@ -289,6 +289,11 @@ class LayerOffloader:
         """
         overall_start = time.time()
 
+        # Check layer device before transfer (for debugging)
+        if self.config.profile and layer_idx == 0:
+            first_param = next(module.parameters())
+            print(f"🔍 Layer {layer_idx} device BEFORE transfer: {first_param.device}")
+
         # Wait for async transfer if it was submitted
         wait_start = time.time()
         async_used = False

@@ -363,9 +363,9 @@ class AdaptiveOffloadManager:
             'mid_range': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=20,
-                pin_memory=True,  # Required for async
-                prefetch_next_layer=True,  # Recommended for async
-                async_transfer=True,
+                pin_memory=True,  # Faster transfers
+                prefetch_next_layer=True,  # Use CUDA streams
+                async_transfer=False,  # Disable ThreadPoolExecutor (causes slowdown!)
             ),
 
             # RTX 4070 12GB, RTX 3080 12GB

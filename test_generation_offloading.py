@@ -520,6 +520,11 @@ def parse_args():
         action="store_true",
         help="Enable detailed profiling (prints timing breakdown per token)"
     )
+    parser.add_argument(
+        "--disable-async",
+        action="store_true",
+        help="Disable async transfers (use synchronous offloading). Try this if generation is unexpectedly slow."
+    )
 
     # Generation arguments
     parser.add_argument(
@@ -596,18 +601,21 @@ def main():
         offload_config = AdaptiveOffloadManager.get_preset_config(args.preset)
         config_name = f"Preset: {args.preset}"
     elif args.num_gpu_layers is not None:
+        async_mode = not args.disable_async
         print(f"\n⚙️  Manual configuration: {args.num_gpu_layers} layers on GPU")
+        if args.disable_async:
+            print("   ⚠️  Async transfers DISABLED (using synchronous mode)")
         offload_config = OffloadConfig(
             enabled=True,
             num_layers_on_gpu=args.num_gpu_layers,
-            pin_memory=True,  # Required for async transfers
-            prefetch_next_layer=True,  # Recommended for async
-            async_transfer=True,  # Enable async for maximum speed
+            pin_memory=True,  # Faster transfers even in sync mode
+            prefetch_next_layer=not args.disable_async,  # Only prefetch if async enabled
+            async_transfer=async_mode,  # Use sync mode if --disable-async
             cache_clear_interval=args.cache_clear_interval,
             verbose=False,
             profile=args.profile
         )
-        config_name = f"Manual: {args.num_gpu_layers} layers"
+        config_name = f"Manual: {args.num_gpu_layers} layers ({'async' if async_mode else 'sync'})"
 
     # Print VRAM estimates
     if offload_config and offload_config.enabled:
