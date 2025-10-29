@@ -154,7 +154,11 @@ class LayerOffloader:
                 self._move_layer_to_cpu(i)
             else:
                 self.gpu_resident_layers.add(i)
-                self._ensure_layer_on_gpu(i)
+                # Explicitly move GPU-resident layers to GPU (no staging buffers needed)
+                layer = self.language_model.layers[i]
+                layer.to(self.device)
+                if self.config.verbose:
+                    print(f"  Moved layer {i} to GPU (resident)")
 
         # Register hooks for automatic transfers
         self._register_hooks()
