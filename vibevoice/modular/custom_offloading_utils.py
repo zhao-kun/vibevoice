@@ -246,6 +246,15 @@ class LayerOffloader:
                     # Instead, copy in-place
                     buffer.data = self.staging_buffers[layer_idx][buffer_key]
 
+        # Verify all parameters are now on CPU
+        if self.config.profile:
+            for name, param in layer.named_parameters():
+                if param.data.device.type != 'cpu':
+                    print(f"⚠️ Layer {layer_idx} param {name} STILL on {param.data.device} after setup!")
+            for name, buffer in layer.named_buffers():
+                if buffer is not None and buffer.data.device.type != 'cpu':
+                    print(f"⚠️ Layer {layer_idx} buffer {name} STILL on {buffer.data.device} after setup!")
+
         if self.config.verbose:
             self.logger.debug(f"Moved layer {layer_idx} to CPU (staging buffer)")
 
@@ -307,11 +316,19 @@ class LayerOffloader:
 
         # If staging buffers don't exist yet, layer is already on GPU
         if layer_idx not in self.staging_buffers:
+            if self.config.profile:
+                print(f"🔍 Layer {layer_idx}: No staging buffers, assuming already on GPU")
             return
+
+        if self.config.profile:
+            print(f"🔍 Layer {layer_idx}: Copying from staging buffers to GPU...")
 
         # Allocate GPU tensors for parameters (or reuse existing)
         for name, param in layer.named_parameters():
             staging_buffer = self.staging_buffers[layer_idx][name]
+
+            if self.config.profile:
+                print(f"   - {name}: staging on {staging_buffer.device}, param on {param.data.device}, will allocate GPU tensor")
 
             # Allocate GPU memory if not already allocated
             if param.data.device != self.device or param.data.shape != staging_buffer.shape:
@@ -324,6 +341,9 @@ class LayerOffloader:
 
             # Swap parameter data to GPU tensor
             param.data = gpu_tensor
+
+            if self.config.profile:
+                print(f"   - {name}: swapped to {param.data.device}")
 
             # Handle Float8 scale
             if hasattr(param, 'scale') and param.scale is not None and f"{name}_scale" in self.staging_buffers[layer_idx]:
@@ -338,9 +358,16 @@ class LayerOffloader:
                 buffer_key = f"buffer_{name}"
                 if buffer_key in self.staging_buffers[layer_idx]:
                     buffer_staging = self.staging_buffers[layer_idx][buffer_key]
+
+                    if self.config.profile:
+                        print(f"   - buffer {name}: staging on {buffer_staging.device}, buffer on {buffer.data.device}")
+
                     gpu_buffer = torch.empty_like(buffer_staging, device=self.device)
                     gpu_buffer.copy_(buffer_staging, non_blocking=True)
                     buffer.data = gpu_buffer
+
+                    if self.config.profile:
+                        print(f"   - buffer {name}: swapped to {buffer.data.device}")
 
         if self.config.verbose:
             self.logger.debug(f"Ensured layer {layer_idx} is on GPU (staging buffer)")
@@ -389,9 +416,24 @@ class LayerOffloader:
             self.forward_start_times[layer_idx] = time.time()
 
         # Check layer device before transfer (for debugging)
-        if self.config.profile and layer_idx == 0:
+        if self.config.profile:
+            # Check first parameter device
             first_param = next(module.parameters())
-            print(f"🔍 Layer {layer_idx} device BEFORE transfer: {first_param.device}")
+            first_param_device = first_param.device
+
+            # Count parameters by device
+            cpu_params = sum(1 for p in module.parameters() if p.device.type == 'cpu')
+            gpu_params = sum(1 for p in module.parameters() if p.device.type == 'cuda')
+            total_params = cpu_params + gpu_params
+
+            if first_param_device.type != 'cpu':
+                print(f"⚠️ Layer {layer_idx} BEFORE transfer: {cpu_params} CPU, {gpu_params} GPU (expected all CPU!)")
+
+            # Check buffers too
+            cpu_buffers = sum(1 for b in module.buffers() if b.device.type == 'cpu')
+            gpu_buffers = sum(1 for b in module.buffers() if b.device.type == 'cuda')
+            if gpu_buffers > 0:
+                print(f"⚠️ Layer {layer_idx} buffers BEFORE transfer: {cpu_buffers} CPU, {gpu_buffers} GPU")
 
         # Transfer layer from CPU staging buffer to GPU
         transfer_start = time.time()
@@ -401,6 +443,18 @@ class LayerOffloader:
         torch.cuda.current_stream().synchronize()
 
         transfer_time_ms = (time.time() - transfer_start) * 1000
+
+        # Verify all parameters are now on GPU
+        if self.config.profile:
+            gpu_params_after = sum(1 for p in module.parameters() if p.device.type == 'cuda')
+            cpu_params_after = sum(1 for p in module.parameters() if p.device.type == 'cpu')
+            if cpu_params_after > 0:
+                print(f"⚠️ Layer {layer_idx} AFTER transfer: {cpu_params_after} params still on CPU!")
+                # Print which params are on CPU
+                for name, param in module.named_parameters():
+                    if param.device.type == 'cpu':
+                        print(f"   - {name}: {param.device}")
+
         if self.config.verbose or self.config.profile:
             print(f"→ Layer {layer_idx}: CPU→GPU: {transfer_time_ms:.2f}ms")
 
@@ -454,10 +508,19 @@ class LayerOffloader:
 
         layer = self.language_model.layers[layer_idx]
 
+        if self.config.profile:
+            # Check device before offload
+            gpu_params_before = sum(1 for p in layer.parameters() if p.device.type == 'cuda')
+            print(f"🔍 Layer {layer_idx} POST-FORWARD: {gpu_params_before} params on GPU, copying back to CPU...")
+
         # Copy parameters back to staging buffers (non-blocking)
         for name, param in layer.named_parameters():
             if layer_idx in self.staging_buffers and name in self.staging_buffers[layer_idx]:
                 staging_buffer = self.staging_buffers[layer_idx][name]
+
+                if self.config.profile:
+                    print(f"   - {name}: copying from {param.data.device} to {staging_buffer.device}")
+
                 # Non-blocking copy from GPU to CPU staging buffer
                 staging_buffer.copy_(param.data, non_blocking=True)
 
@@ -479,11 +542,17 @@ class LayerOffloader:
         # Wait for copies to complete before swapping pointers
         torch.cuda.current_stream().synchronize()
 
+        if self.config.profile:
+            print(f"   Synchronize complete, swapping pointers...")
+
         # Swap parameter pointers back to CPU staging buffers
         for name, param in layer.named_parameters():
             if layer_idx in self.staging_buffers and name in self.staging_buffers[layer_idx]:
                 # Swap param.data to staging buffer
                 param.data = self.staging_buffers[layer_idx][name]
+
+                if self.config.profile:
+                    print(f"   - {name}: pointer swapped, now on {param.data.device}")
 
                 # Handle Float8 scale
                 if hasattr(param, 'scale') and param.scale is not None:
@@ -497,6 +566,20 @@ class LayerOffloader:
                 buffer_key = f"buffer_{name}"
                 if layer_idx in self.staging_buffers and buffer_key in self.staging_buffers[layer_idx]:
                     buffer.data = self.staging_buffers[layer_idx][buffer_key]
+
+                    if self.config.profile:
+                        print(f"   - buffer {name}: pointer swapped, now on {buffer.data.device}")
+
+        # Verify all parameters are back on CPU
+        if self.config.profile:
+            cpu_params_after = sum(1 for p in layer.parameters() if p.device.type == 'cpu')
+            gpu_params_after = sum(1 for p in layer.parameters() if p.device.type == 'cuda')
+            print(f"✓ Layer {layer_idx} POST-OFFLOAD: {cpu_params_after} CPU, {gpu_params_after} GPU")
+            if gpu_params_after > 0:
+                print(f"⚠️ ERROR: Layer {layer_idx} has {gpu_params_after} params still on GPU!")
+                for name, param in layer.named_parameters():
+                    if param.device.type == 'cuda':
+                        print(f"   - {name}: {param.device}")
 
         offload_time_ms = (time.time() - offload_start) * 1000
         if self.config.verbose or self.config.profile:
