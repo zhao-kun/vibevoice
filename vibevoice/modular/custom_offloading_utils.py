@@ -334,6 +334,18 @@ class LayerOffloader:
                 prefetch_time = (time.time() - prefetch_start) * 1000
                 self.profile_data['prefetch_submit_time'].append(prefetch_time)
 
+        # Wrap-around prefetch: If this is the last offloaded layer, prefetch the first one for next token
+        elif self.config.prefetch_next_layer and self.offloaded_layers:
+            max_offloaded = max(self.offloaded_layers)
+            min_offloaded = min(self.offloaded_layers)
+            if layer_idx == max_offloaded:
+                # We just finished the last offloaded layer, prefetch the first one for next token
+                self._start_async_prefetch(min_offloaded)
+                if self.config.profile:
+                    prefetch_time = (time.time() - prefetch_start) * 1000
+                    self.profile_data['prefetch_submit_time'].append(prefetch_time)
+                    print(f"🔄 Wrap-around prefetch: Layer {layer_idx} → Layer {min_offloaded} (next token)")
+
         return args, kwargs
 
     def _post_forward_transfer(self, layer_idx: int, module: nn.Module, outputs):
