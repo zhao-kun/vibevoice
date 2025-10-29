@@ -48,6 +48,9 @@ class OffloadConfig:
     async_transfer: bool = False
     """Use async transfers (experimental)"""
 
+    cache_clear_interval: int = 50
+    """Clear CUDA cache every N layer transfers (0 = never, 50 = balanced, default: 50)"""
+
     verbose: bool = False
     """Print detailed offloading information"""
 
@@ -109,6 +112,7 @@ class LayerOffloader:
         self.transfer_times: List[float] = []
         self.forward_times: Dict[int, List[float]] = defaultdict(list)
         self.total_transfers: int = 0
+        self.cache_clear_counter: int = 0
 
         # Setup offloading strategy
         if self.config.enabled:
@@ -231,10 +235,6 @@ class LayerOffloader:
         """
         start = time.time()
 
-        # Clear any stale CUDA cache before loading new layer
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
         # Check if we have prefetched this layer
         if layer_idx in self.prefetch_buffer:
             # Wait for async transfer to complete
@@ -281,9 +281,14 @@ class LayerOffloader:
         # Move back to CPU to free VRAM immediately
         module.cpu()
 
-        # Aggressively clear CUDA cache to ensure memory is freed
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        # Smart cache clearing: only clear periodically to avoid overhead
+        # Clearing cache is expensive (100-500ms), so we batch it
+        if self.config.cache_clear_interval > 0:
+            self.cache_clear_counter += 1
+            if self.cache_clear_counter >= self.config.cache_clear_interval:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                self.cache_clear_counter = 0
 
         # Note: We don't re-pin memory here to avoid memory duplication
         # Pinning is only done once during initial setup in _move_layer_to_cpu

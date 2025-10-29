@@ -155,6 +155,8 @@ def load_model(model_file: str, config_path: str, dtype: torch.dtype,
         print(f"Layers on GPU: {offload_config.num_layers_on_gpu}")
         print(f"Pin memory: {offload_config.pin_memory}")
         print(f"Prefetch next layer: {offload_config.prefetch_next_layer}")
+        cache_msg = "Never" if offload_config.cache_clear_interval == 0 else f"Every {offload_config.cache_clear_interval} transfers"
+        print(f"Cache clearing: {cache_msg}")
         print("="*70 + "\n")
 
     # Load model with device-specific logic
@@ -346,7 +348,7 @@ def print_summary(metrics: GenerationMetrics, config_name: str = "Default"):
 
     # Offloading metrics
     if metrics.offload_config and metrics.offload_config.enabled:
-        print(f"\nOffloading enabled:")
+        print("\nOffloading enabled:")
         print(f"  Layers on GPU: {metrics.offload_config.num_layers_on_gpu}/28")
         print(f"  Layers on CPU: {28 - metrics.offload_config.num_layers_on_gpu}/28")
         print(f"  Transfer overhead: {metrics.transfer_overhead_ms:.1f}ms ({metrics.transfer_overhead_ms/1000:.1f}s)")
@@ -354,7 +356,7 @@ def print_summary(metrics: GenerationMetrics, config_name: str = "Default"):
         overhead_percent = (metrics.transfer_overhead_ms / 1000 / metrics.generation_time) * 100
         print(f"  Overhead percentage: {overhead_percent:.1f}%")
     else:
-        print(f"\nOffloading: Disabled")
+        print("\nOffloading: Disabled")
 
     print("="*70)
 
@@ -384,6 +386,7 @@ def benchmark_configurations(args):
             num_layers_on_gpu=num_layers,
             pin_memory=False,  # Disabled for memory safety
             prefetch_next_layer=False,  # Disabled to save VRAM
+            cache_clear_interval=50,
             verbose=False
         )
         configs_to_test.append((f"Manual: {num_layers} layers", config))
@@ -502,6 +505,14 @@ def parse_args():
         help="Run benchmark across multiple configurations"
     )
 
+    # Performance tuning
+    parser.add_argument(
+        "--cache-clear-interval",
+        type=int,
+        default=50,
+        help="Clear CUDA cache every N transfers (0=never, 50=balanced, 100=rare). Lower = more memory safe, higher = faster. Default: 50"
+    )
+
     # Generation arguments
     parser.add_argument(
         "--output_dir",
@@ -583,6 +594,7 @@ def main():
             num_layers_on_gpu=args.num_gpu_layers,
             pin_memory=False,  # Disabled for memory safety
             prefetch_next_layer=False,  # Disabled to save VRAM
+            cache_clear_interval=args.cache_clear_interval,
             verbose=False
         )
         config_name = f"Manual: {args.num_gpu_layers} layers"
