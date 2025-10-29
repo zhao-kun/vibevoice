@@ -382,8 +382,8 @@ def benchmark_configurations(args):
         config = OffloadConfig(
             enabled=True,
             num_layers_on_gpu=num_layers,
-            pin_memory=True,
-            prefetch_next_layer=True,
+            pin_memory=False,  # Disabled for memory safety
+            prefetch_next_layer=False,  # Disabled to save VRAM
             verbose=False
         )
         configs_to_test.append((f"Manual: {num_layers} layers", config))
@@ -455,7 +455,7 @@ def parse_args():
     parser.add_argument(
         "--model_file",
         type=str,
-        default="./models/converted/vibvoice7b_bf16.safetensors",
+        default="./models/converted/vibevoice7b_bf16.safetensors",
         help="Path to the model file"
     )
     parser.add_argument(
@@ -581,8 +581,8 @@ def main():
         offload_config = OffloadConfig(
             enabled=True,
             num_layers_on_gpu=args.num_gpu_layers,
-            pin_memory=True,
-            prefetch_next_layer=True,
+            pin_memory=False,  # Disabled for memory safety
+            prefetch_next_layer=False,  # Disabled to save VRAM
             verbose=False
         )
         config_name = f"Manual: {args.num_gpu_layers} layers"

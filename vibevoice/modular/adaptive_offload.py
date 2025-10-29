@@ -113,8 +113,8 @@ class AdaptiveOffloadManager:
         batch_size: int = 1,
         max_seq_len: int = 4096,
         use_float8: bool = True,
-        pin_memory: bool = True,
-        prefetch: bool = True
+        pin_memory: bool = False,
+        prefetch: bool = False
     ) -> OffloadConfig:
         """
         Binary search to find optimal number of GPU layers.
@@ -343,7 +343,8 @@ class AdaptiveOffloadManager:
         Get preset configuration for common GPU tiers.
 
         Args:
-            preset: One of ['high_end', 'mid_range', 'consumer', 'budget', 'minimal']
+            preset: One of ['high_end', 'mid_range', 'consumer', 'budget', 'minimal',
+                           'light', 'moderate', 'balanced', 'aggressive', 'extreme']
 
         Returns:
             Preset OffloadConfig
@@ -362,34 +363,41 @@ class AdaptiveOffloadManager:
             'mid_range': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=20,
-                pin_memory=True,
-                prefetch_next_layer=True,
+                pin_memory=False,  # Disabled for memory safety
+                prefetch_next_layer=False,  # Disabled to save VRAM
             ),
 
             # RTX 4070 12GB, RTX 3080 12GB
             'consumer': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=12,
-                pin_memory=True,
-                prefetch_next_layer=True,
+                pin_memory=False,  # Disabled for memory safety
+                prefetch_next_layer=False,  # Disabled to save VRAM
             ),
 
             # RTX 3060 12GB, RTX 4060 Ti 16GB
             'budget': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=8,
-                pin_memory=True,
-                prefetch_next_layer=True,
+                pin_memory=False,  # Disabled for memory safety
+                prefetch_next_layer=False,  # Disabled to save VRAM
             ),
 
             # RTX 3050 8GB, GTX 1080 8GB
             'minimal': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=4,
-                pin_memory=True,
-                prefetch_next_layer=True,
-                offload_kv_cache=True,
+                pin_memory=False,  # Disabled for memory safety
+                prefetch_next_layer=False,  # Disabled to save VRAM
+                offload_kv_cache=False,  # Disabled for now
             ),
+
+            # Alternative naming scheme (layer count based)
+            'light': OffloadConfig(enabled=True, num_layers_on_gpu=20, pin_memory=False, prefetch_next_layer=False),
+            'moderate': OffloadConfig(enabled=True, num_layers_on_gpu=16, pin_memory=False, prefetch_next_layer=False),
+            'balanced': OffloadConfig(enabled=True, num_layers_on_gpu=12, pin_memory=False, prefetch_next_layer=False),
+            'aggressive': OffloadConfig(enabled=True, num_layers_on_gpu=8, pin_memory=False, prefetch_next_layer=False),
+            'extreme': OffloadConfig(enabled=True, num_layers_on_gpu=4, pin_memory=False, prefetch_next_layer=False),
         }
 
         if preset not in presets:

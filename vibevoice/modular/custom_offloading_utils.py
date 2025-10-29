@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Set, Any
 from dataclasses import dataclass
 import logging
 import time
+import gc
 from collections import defaultdict
 
 
@@ -38,11 +39,11 @@ class OffloadConfig:
     offload_kv_cache: bool = False
     """Offload KV cache for CPU layers (aggressive memory saving)"""
 
-    pin_memory: bool = True
-    """Use pinned memory for faster CPU<->GPU transfers"""
+    pin_memory: bool = False
+    """Use pinned memory for faster CPU<->GPU transfers (disabled by default to save memory)"""
 
-    prefetch_next_layer: bool = True
-    """Prefetch next layer during current forward pass"""
+    prefetch_next_layer: bool = False
+    """Prefetch next layer during current forward pass (disabled by default to save VRAM)"""
 
     async_transfer: bool = False
     """Use async transfers (experimental)"""
@@ -230,6 +231,10 @@ class LayerOffloader:
         """
         start = time.time()
 
+        # Clear any stale CUDA cache before loading new layer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         # Check if we have prefetched this layer
         if layer_idx in self.prefetch_buffer:
             # Wait for async transfer to complete
@@ -242,8 +247,11 @@ class LayerOffloader:
             if self.config.verbose:
                 self.logger.debug(f"Layer {layer_idx}: Using prefetched weights")
         else:
-            # Synchronous transfer
-            module.to(self.device)
+            # Synchronous transfer with non_blocking for pinned memory
+            if self.config.pin_memory:
+                module.to(self.device, non_blocking=True)
+            else:
+                module.to(self.device)
 
             if self.config.verbose:
                 self.logger.debug(f"Layer {layer_idx}: Synchronous transfer to GPU")
@@ -270,25 +278,16 @@ class LayerOffloader:
         Returns:
             Outputs (unchanged)
         """
-        # Move back to CPU to free VRAM
+        # Move back to CPU to free VRAM immediately
         module.cpu()
 
-        # Re-pin memory after CPU transfer (pinning is lost during GPU->CPU transfer)
-        # IMPORTANT: We only pin if this layer was originally marked for pinning
-        if self.config.pin_memory and layer_idx in self.pinned_layers:
-            for param in module.parameters():
-                # Pin the parameter data (creates new pinned tensor, old one should be freed)
-                if param.device.type == 'cpu' and not param.data.is_pinned():
-                    old_data = param.data
-                    param.data = param.data.pin_memory()
-                    del old_data  # Explicitly release reference
+        # Aggressively clear CUDA cache to ensure memory is freed
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-                # Handle Float8 scale tensors (AutoCast wrapper)
-                if hasattr(param, 'scale') and param.scale is not None:
-                    if param.scale.device.type == 'cpu' and not param.scale.is_pinned():
-                        old_scale = param.scale
-                        param.scale = param.scale.pin_memory()
-                        del old_scale  # Explicitly release reference
+        # Note: We don't re-pin memory here to avoid memory duplication
+        # Pinning is only done once during initial setup in _move_layer_to_cpu
+        # Subsequent transfers will use the already-pinned tensors
 
         if self.config.verbose:
             self.logger.debug(f"Layer {layer_idx}: Moved back to CPU")
@@ -349,6 +348,24 @@ class LayerOffloader:
             'gpu_layers': len(self.gpu_resident_layers),
             'cpu_layers': len(self.offloaded_layers),
             'estimated_overhead_pct': estimated_overhead_pct,
+        }
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get detailed statistics for generation metrics.
+
+        Returns:
+            Dictionary with detailed statistics including transfer overhead
+        """
+        total_transfer_time_ms = sum(self.transfer_times) * 1000 if self.transfer_times else 0
+        avg_layer_transfer_ms = total_transfer_time_ms / len(self.transfer_times) if self.transfer_times else 0
+
+        return {
+            'total_transfer_time_ms': total_transfer_time_ms,
+            'avg_layer_transfer_time_ms': avg_layer_transfer_ms,
+            'total_transfers': self.total_transfers,
+            'gpu_layers': len(self.gpu_resident_layers),
+            'cpu_layers': len(self.offloaded_layers),
         }
 
     def print_stats(self):
