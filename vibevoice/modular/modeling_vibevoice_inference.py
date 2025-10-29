@@ -90,12 +90,23 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         # Initialize random generator for deterministic speech generation
         self._speech_generator = None
+
+        # Layer offloader for VRAM optimization
+        self.offloader = None
         # self.tie_weights()
 
     def generate_config_from_dict(self, config_dict: Dict) -> GenerationConfig:
         generation_config = GenerationConfig.from_dict(config_dict, return_unused_kwargs=False, _from_model_config=True)
         generation_config._original_object_hash = hash(generation_config)
         return generation_config
+
+    def __del__(self):
+        """Cleanup offloader when model is destroyed"""
+        if hasattr(self, 'offloader') and self.offloader is not None:
+            try:
+                self.offloader.cleanup()
+            except Exception:
+                pass  # Ignore cleanup errors during deletion
 
     @property
     def noise_scheduler(self):
@@ -708,23 +719,45 @@ class VibeVoiceForConditionalInference(nn.Module):
             reach_max_step_sample=reach_max_step_sample,
         )
 
+    def _ensure_prediction_head_on_gpu(self):
+        """Move prediction_head to GPU if offloaded"""
+        if self.offloader and self.offloader.config.offload_prediction_head:
+            if self.model.prediction_head.device.type == 'cpu':
+                self.model.prediction_head.to(self.device)
+
+    def _move_prediction_head_to_cpu(self):
+        """Move prediction_head back to CPU if offloaded"""
+        if self.offloader and self.offloader.config.offload_prediction_head:
+            if self.model.prediction_head.device.type != 'cpu':
+                self.model.prediction_head.cpu()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
     @torch.no_grad()
     def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0, step=0):
-        self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
-        condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
+        # Ensure prediction_head is on GPU for this operation
+        self._ensure_prediction_head_on_gpu()
 
-        temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=get_generator())
-        speech = temp.to(condition)
+        try:
+            self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
+            condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
 
-        for t in self.model.noise_scheduler.timesteps:
-            half = speech[: len(speech) // 2]
-            combined = torch.cat([half, half], dim=0)
-            eps = self.model.prediction_head(combined, t.repeat(combined.shape[0]).to(combined), condition=condition)
-            cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
-            half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
-            eps = torch.cat([half_eps, half_eps], dim=0)
-            speech = self.model.noise_scheduler.step(eps, t, speech).prev_sample
-        return speech[: len(speech) // 2]
+            temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=get_generator())
+            speech = temp.to(condition)
+
+            for t in self.model.noise_scheduler.timesteps:
+                half = speech[: len(speech) // 2]
+                combined = torch.cat([half, half], dim=0)
+                eps = self.model.prediction_head(combined, t.repeat(combined.shape[0]).to(combined), condition=condition)
+                cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
+                half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
+                eps = torch.cat([half_eps, half_eps], dim=0)
+                speech = self.model.noise_scheduler.step(eps, t, speech).prev_sample
+
+            return speech[: len(speech) // 2]
+        finally:
+            # Move back to CPU after diffusion loop
+            self._move_prediction_head_to_cpu()
 
     def _prepare_generation_config(self, generation_config: Optional[GenerationConfig], **kwargs: Dict) -> Tuple[GenerationConfig, Dict]:
         """
@@ -819,11 +852,25 @@ class VibeVoiceForConditionalInference(nn.Module):
 
 
     @classmethod
-    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda"):
-        """Load model from pretrained weights."""
+    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda", offload_config=None):
+        """
+        Load model from pretrained weights.
+
+        Args:
+            model_path: Path to model weights (directory or single file)
+            config: Model configuration
+            device: Target device (default: "cuda")
+            offload_config: Optional OffloadConfig for layer offloading
+
+        Returns:
+            Loaded model with optional offloading enabled
+        """
         from util.safetensors_util import MultipleSafetensorLoader, MemoryEfficientSafeOpen
+        from vibevoice.modular.custom_offloading_utils import LayerOffloader
+
         with init_empty_weights():
             model = cls(config)
+
         state_dict = {}
         if os.path.isdir(model_path):
             print(f"Begin to load model from model path {model_path}")
@@ -832,12 +879,59 @@ class VibeVoiceForConditionalInference(nn.Module):
             print(f"Begin to load model from mono model file {model_path}")
             with MemoryEfficientSafeOpen(model_path) as safe:
                 for key in safe.keys():
-                    state_dict[key] = safe.get_tensor(key).to(device)
-        model.load_state_dict(state_dict, strict=False, assign=True)
-        # model.to(device)
+                    state_dict[key] = safe.get_tensor(key)
 
-        # Use to_empty() instead of to() when moving from meta tensors
+        model.load_state_dict(state_dict, strict=False, assign=True)
         print("Model loaded")
+
+        # Setup layer offloading if enabled
+        if offload_config is not None and offload_config.enabled:
+            print(f"Setting up layer offloading: {offload_config.num_layers_on_gpu} layers on GPU")
+
+            # First, move all non-transformer components to GPU
+            # (LayerOffloader only handles transformer layers)
+
+            # Top-level components
+            model.lm_head.to(device)
+
+            # Language model components (except transformer layers)
+            # Convert embedding from Float8 to BF16 to avoid OOM during forward pass
+            if model.model.language_model.embed_tokens.weight.dtype == torch.float8_e4m3fn:
+                print("Converting embedding layer from Float8 to BF16...")
+                # Move to CPU first, convert, then move to GPU
+                model.model.language_model.embed_tokens.cpu()
+                embed_weight_data = model.model.language_model.embed_tokens.weight.data.to(torch.bfloat16)
+                model.model.language_model.embed_tokens.weight.data = embed_weight_data
+
+            model.model.language_model.embed_tokens.to(device)
+            model.model.language_model.norm.to(device)
+
+            # Speech processing components
+            model.model.acoustic_tokenizer.to(device)
+            model.model.semantic_tokenizer.to(device)
+            model.model.acoustic_connector.to(device)
+            model.model.semantic_connector.to(device)
+
+            # Prediction head: conditionally offload to CPU
+            if offload_config.offload_prediction_head:
+                model.model.prediction_head.cpu()
+                print("Prediction head offloaded to CPU (will transfer on-demand)")
+            else:
+                model.model.prediction_head.to(device)
+
+            # Now setup layer offloading for transformer layers only
+            model.offloader = LayerOffloader(
+                language_model=model.model.language_model,
+                config=offload_config,
+                device=torch.device(device),
+                logger=logger
+            )
+            print(f"Layer offloading enabled: {len(model.offloader.offloaded_layers)} layers offloaded")
+        else:
+            # No offloading - move entire model to device
+            model.to(device)
+            print(f"Model moved to {device} (no offloading)")
+
         return model
 
     def _prepare_model_inputs(

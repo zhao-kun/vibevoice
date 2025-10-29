@@ -25,7 +25,14 @@ def cast_bias_weight(module, input :torch.Tensor=None, dtype: torch.dtype=None, 
     if hasattr(module, 'bias') and module.bias is not None:
         bias = module.bias.to(device=device, dtype=bias_dtype)
 
-    weight = module.weight.to(device=device, dtype=dtype)
+    weight = module.weight
+
+    # Special handling for Float8 tensors - need to convert via .data
+    if weight.dtype == torch.float8_e4m3fn:
+        # Convert the underlying tensor data
+        weight = weight.data.to(device=device, dtype=dtype)
+    else:
+        weight = weight.to(device=device, dtype=dtype)
     return weight, bias
 
 class ResetParametersMixin:
@@ -221,7 +228,7 @@ class AutoCast:
 
         def forward_comfy_cast_weights(self, input, out_dtype=None):
             output_dtype = torch.bfloat16
-            weight, bias = cast_bias_weight(self, device=input.device, dtype=out_dtype)
+            weight, bias = cast_bias_weight(self, input=input, device=input.device, dtype=output_dtype)
             return torch.nn.functional.embedding(input, weight, self.padding_idx, self.max_norm, self.norm_type, self.scale_grad_by_freq, self.sparse).to(dtype=output_dtype)
 
         def forward(self, *args, **kwargs):

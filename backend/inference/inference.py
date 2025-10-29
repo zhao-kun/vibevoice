@@ -41,12 +41,32 @@ class InferenceBase(ABC):
 
     @staticmethod
     def create(generation: Generation, speaker_service: SpeakerService,
-               dialog_service: DialogSessionService, meta_file_path: str, fake: bool = False) -> 'InferenceBase':
+               dialog_service: DialogSessionService, meta_file_path: str, fake: bool = False,
+               enable_offloading: bool = None, num_gpu_layers: int = None,
+               offload_preset: str = None) -> 'InferenceBase':
+        """
+        Create inference engine instance.
 
+        Args:
+            generation: Generation object
+            speaker_service: Speaker service
+            dialog_service: Dialog service
+            meta_file_path: Path to metadata
+            fake: Use fake inference engine for testing
+            enable_offloading: Enable layer offloading (default: auto-detect)
+            num_gpu_layers: Number of layers on GPU (default: auto-detect)
+            offload_preset: Use preset config ('high_end', 'mid_range', 'consumer', 'budget', 'minimal')
+
+        Returns:
+            InferenceBase instance
+        """
         if fake:
             return FakeInferenceEngine(generation, speaker_service, dialog_service, meta_file_path)
 
-        return InferenceEngine(generation, speaker_service, dialog_service, meta_file_path)
+        return InferenceEngine(generation, speaker_service, dialog_service, meta_file_path,
+                             enable_offloading=enable_offloading,
+                             num_gpu_layers=num_gpu_layers,
+                             offload_preset=offload_preset)
 
     @abstractmethod
     def _load_model(self, dtype: torch.dtype, config: str = None):
@@ -116,10 +136,32 @@ class InferenceBase(ABC):
 
 
 class InferenceEngine(InferenceBase):
-    def __init__(self, generation, speaker_service, dialog_service, meta_file_path: str):
+    def __init__(self, generation, speaker_service, dialog_service, meta_file_path: str,
+                 enable_offloading: bool = None, num_gpu_layers: int = None,
+                 offload_preset: str = None):
+        """
+        Initialize inference engine with optional layer offloading.
+
+        Args:
+            generation: Generation object with parameters
+            speaker_service: Service for managing speakers
+            dialog_service: Service for managing dialogs
+            meta_file_path: Path to metadata file
+            enable_offloading: Enable layer offloading (default: auto-detect)
+            num_gpu_layers: Number of layers to keep on GPU (default: auto-detect)
+            offload_preset: Use preset config ('high_end', 'mid_range', 'consumer', 'budget', 'minimal')
+        """
         super().__init__(generation, speaker_service, dialog_service, meta_file_path)
 
+        # Offloading configuration
+        self.enable_offloading = enable_offloading
+        self.num_gpu_layers = num_gpu_layers
+        self.offload_preset = offload_preset
+
     def _load_model(self, dtype: torch.dtype, config: str = None):
+        from vibevoice.modular.adaptive_offload import AdaptiveOffloadManager
+        from vibevoice.modular.custom_offloading_utils import OffloadConfig
+
         config_dict = {}
         if config:
             with open(config, 'r') as f:
@@ -134,10 +176,57 @@ class InferenceEngine(InferenceBase):
                                            torch_dtype=dtype,
                                            device_map="cuda",
                                            attn_implementation=self.generation.attn_implementation)
+
+        # Determine offload configuration
+        offload_config = None
+        use_float8 = dtype == torch.float8_e4m3fn
+
+        if self.offload_preset:
+            # Use preset configuration
+            logger.info(f"Using offload preset: {self.offload_preset}")
+            offload_config = AdaptiveOffloadManager.get_preset_config(self.offload_preset)
+        elif self.enable_offloading or (self.enable_offloading is None and self.num_gpu_layers is not None):
+            # Auto-configure based on available VRAM or use specified num_gpu_layers
+            if self.num_gpu_layers is not None:
+                logger.info(f"Manual offload config: {self.num_gpu_layers} layers on GPU")
+                offload_config = OffloadConfig(
+                    enabled=True,
+                    num_layers_on_gpu=self.num_gpu_layers,
+                    pin_memory=True,
+                    prefetch_next_layer=True,
+                    verbose=False
+                )
+            else:
+                logger.info("Auto-detecting offload configuration...")
+                offload_config = AdaptiveOffloadManager.auto_configure(
+                    total_layers=28,
+                    batch_size=1,
+                    max_seq_len=4096,
+                    use_float8=use_float8,
+                    target_utilization=0.80,
+                    device=self.device,
+                    logger=logger
+                )
+        else:
+            logger.info("Layer offloading disabled")
+
+        # Print VRAM estimates
+        if offload_config and offload_config.enabled:
+            AdaptiveOffloadManager.print_vram_table(use_float8=use_float8, logger=logger)
+
         # Load model with device-specific logic
         model_file = Path(self.model_file) / Path(f"vibevoice7b_{'bf16' if dtype == torch.bfloat16 else 'float8_e4m3fn'}.safetensors")
-        model = VibeVoiceForConditionalInference.from_pretrain(str(model_file.resolve()), config)
-        model.to(self.device)
+        model = VibeVoiceForConditionalInference.from_pretrain(
+            str(model_file.resolve()),
+            config,
+            device=self.device,
+            offload_config=offload_config
+        )
+
+        # Print offloading statistics if enabled
+        if model.offloader is not None:
+            model.offloader.print_stats()
+
         model.eval()
         return model
 
