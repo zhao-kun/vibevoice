@@ -271,7 +271,7 @@ class LayerOffloader:
             self.pre_forward_hooks[layer_idx] = pre_handle
             self.post_forward_hooks[layer_idx] = post_handle
 
-            if self.config.verbose or self.config.profile:
+            if self.config.verbose:
                 print(f"  Registered hooks for layer {layer_idx}")
 
     def _pre_forward_transfer(self, layer_idx: int, module: nn.Module, args, kwargs):
@@ -302,7 +302,7 @@ class LayerOffloader:
                 event = self.prefetch_events.pop(layer_idx)
                 event.synchronize()
 
-            if self.config.verbose or self.config.profile:
+            if self.config.verbose:
                 wait_time = (time.time() - wait_start) * 1000
                 print(f"Layer {layer_idx}: Async transfer wait: {wait_time:.2f}ms")
         else:
@@ -328,23 +328,25 @@ class LayerOffloader:
 
         # Start async transfer of next layer if enabled
         prefetch_start = time.time()
-        if self.config.prefetch_next_layer and layer_idx + 1 in self.offloaded_layers:
-            self._start_async_prefetch(layer_idx + 1)
-            if self.config.profile:
-                prefetch_time = (time.time() - prefetch_start) * 1000
-                self.profile_data['prefetch_submit_time'].append(prefetch_time)
-
-        # Wrap-around prefetch: If this is the last offloaded layer, prefetch the first one for next token
-        elif self.config.prefetch_next_layer and self.offloaded_layers:
-            max_offloaded = max(self.offloaded_layers)
-            min_offloaded = min(self.offloaded_layers)
-            if layer_idx == max_offloaded:
-                # We just finished the last offloaded layer, prefetch the first one for next token
-                self._start_async_prefetch(min_offloaded)
+        if self.config.prefetch_next_layer:
+            if layer_idx + 1 in self.offloaded_layers:
+                # Normal sequential prefetch
+                self._start_async_prefetch(layer_idx + 1)
                 if self.config.profile:
                     prefetch_time = (time.time() - prefetch_start) * 1000
                     self.profile_data['prefetch_submit_time'].append(prefetch_time)
-                    print(f"🔄 Wrap-around prefetch: Layer {layer_idx} → Layer {min_offloaded} (next token)")
+            elif self.offloaded_layers:
+                # Wrap-around prefetch: If this is the last offloaded layer, prefetch the first one for next token
+                max_offloaded = max(self.offloaded_layers)
+                min_offloaded = min(self.offloaded_layers)
+                if layer_idx == max_offloaded:
+                    # We just finished the last offloaded layer, prefetch the first one for next token
+                    if self.config.profile:
+                        print(f"🔄 Wrap-around: Layer {layer_idx} → prefetching Layer {min_offloaded} for next token")
+                    self._start_async_prefetch(min_offloaded)
+                    if self.config.profile:
+                        prefetch_time = (time.time() - prefetch_start) * 1000
+                        self.profile_data['prefetch_submit_time'].append(prefetch_time)
 
         return args, kwargs
 
@@ -368,7 +370,7 @@ class LayerOffloader:
             future = self.thread_pool.submit(self._async_move_to_cpu, layer_idx)
             # Don't wait - let it happen in background
 
-            if self.config.verbose or self.config.profile:
+            if self.config.verbose:
                 submit_time = (time.time() - post_start) * 1000
                 print(f"Layer {layer_idx}: Async CPU offload submitted: {submit_time:.2f}ms")
         else:
@@ -442,7 +444,7 @@ class LayerOffloader:
                 event.record(self.next_layer_stream)
                 self.prefetch_events[layer_idx] = event
 
-            if self.config.verbose or self.config.profile:
+            if self.config.verbose:
                 print(f"Layer {layer_idx}: Async prefetch submitted to thread pool")
         else:
             if self.config.profile:
@@ -529,8 +531,8 @@ class LayerOffloader:
         self.token_count += 1
         current_time = time.time()
 
-        # Print every token or every 5 seconds
-        if current_time - self.last_profile_print < 5.0 and self.token_count % 10 != 0:
+        # Print every 10 tokens
+        if self.token_count % 10 != 0:
             return
 
         print("\n" + "="*80)
