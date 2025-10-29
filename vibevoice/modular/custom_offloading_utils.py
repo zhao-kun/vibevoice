@@ -57,6 +57,9 @@ class OffloadConfig:
     verbose: bool = False
     """Print detailed offloading information"""
 
+    profile: bool = False
+    """Enable detailed profiling (prints timing breakdown)"""
+
 
 class LayerOffloader:
     """
@@ -122,6 +125,11 @@ class LayerOffloader:
         self.forward_times: Dict[int, List[float]] = defaultdict(list)
         self.total_transfers: int = 0
         self.cache_clear_counter: int = 0
+
+        # Profiling data
+        self.profile_data: Dict[str, List[float]] = defaultdict(list)
+        self.token_count: int = 0
+        self.last_profile_print: float = time.time()
 
         # Setup offloading strategy
         if self.config.enabled:
@@ -276,10 +284,13 @@ class LayerOffloader:
         Returns:
             (args, kwargs) tuple (unchanged)
         """
-        start = time.time()
+        overall_start = time.time()
 
         # Wait for async transfer if it was submitted
+        wait_start = time.time()
+        async_used = False
         if layer_idx in self.transfer_futures:
+            async_used = True
             future = self.transfer_futures.pop(layer_idx)
             future.result()  # Wait for completion
 
@@ -288,26 +299,37 @@ class LayerOffloader:
                 event = self.prefetch_events.pop(layer_idx)
                 event.synchronize()
 
-            if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Async transfer completed")
+            if self.config.verbose or self.config.profile:
+                wait_time = (time.time() - wait_start) * 1000
+                self.logger.info(f"Layer {layer_idx}: Async transfer wait: {wait_time:.2f}ms")
         else:
             # Fallback to synchronous transfer
+            sync_start = time.time()
             if self.config.pin_memory:
                 module.to(self.device, non_blocking=True)
                 torch.cuda.current_stream().synchronize()
             else:
                 module.to(self.device)
 
-            if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Synchronous transfer to GPU")
+            if self.config.verbose or self.config.profile:
+                sync_time = (time.time() - sync_start) * 1000
+                self.logger.warning(f"Layer {layer_idx}: SYNC transfer (NOT ASYNC!): {sync_time:.2f}ms")
 
-        transfer_time = time.time() - start
+        transfer_time = time.time() - overall_start
         self.transfer_times.append(transfer_time)
         self.total_transfers += 1
 
+        if self.config.profile:
+            self.profile_data[f'layer_{layer_idx}_pre_transfer'].append(transfer_time * 1000)
+            self.profile_data[f'layer_{layer_idx}_async_used'].append(1 if async_used else 0)
+
         # Start async transfer of next layer if enabled
+        prefetch_start = time.time()
         if self.config.prefetch_next_layer and layer_idx + 1 in self.offloaded_layers:
             self._start_async_prefetch(layer_idx + 1)
+            if self.config.profile:
+                prefetch_time = (time.time() - prefetch_start) * 1000
+                self.profile_data['prefetch_submit_time'].append(prefetch_time)
 
         return args, kwargs
 
@@ -323,29 +345,50 @@ class LayerOffloader:
         Returns:
             Outputs (unchanged)
         """
+        post_start = time.time()
+
         # Submit async CPU transfer if using thread pool
         if self.config.async_transfer and self.thread_pool is not None:
             # Submit async move to CPU
             future = self.thread_pool.submit(self._async_move_to_cpu, layer_idx)
             # Don't wait - let it happen in background
 
-            if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Async CPU transfer submitted")
+            if self.config.verbose or self.config.profile:
+                submit_time = (time.time() - post_start) * 1000
+                self.logger.info(f"Layer {layer_idx}: Async CPU offload submitted: {submit_time:.2f}ms")
         else:
             # Synchronous move to CPU
+            cpu_start = time.time()
             module.cpu()
+            cpu_time = (time.time() - cpu_start) * 1000
 
-            if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Moved back to CPU")
+            if self.config.verbose or self.config.profile:
+                self.logger.warning(f"Layer {layer_idx}: SYNC CPU transfer: {cpu_time:.2f}ms")
 
         # Smart cache clearing: only clear periodically to avoid overhead
         # Clearing cache is expensive (100-500ms), so we batch it
+        cache_cleared = False
         if self.config.cache_clear_interval > 0:
             self.cache_clear_counter += 1
             if self.cache_clear_counter >= self.config.cache_clear_interval:
+                cache_start = time.time()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                cache_time = (time.time() - cache_start) * 1000
+                if self.config.profile and cache_time > 1.0:
+                    self.logger.info(f"Cache clear took: {cache_time:.2f}ms")
                 self.cache_clear_counter = 0
+                cache_cleared = True
+
+        post_time = time.time() - post_start
+        if self.config.profile:
+            self.profile_data[f'layer_{layer_idx}_post_transfer'].append(post_time * 1000)
+            if cache_cleared:
+                self.profile_data['cache_clear_count'].append(1)
+
+        # Print profiling summary every token
+        if self.config.profile and layer_idx == max(self.offloaded_layers):
+            self._print_profile_summary()
 
         return outputs
 
@@ -455,6 +498,48 @@ class LayerOffloader:
             'cpu_layers': len(self.offloaded_layers),
         }
 
+    def _print_profile_summary(self):
+        """Print profiling summary for last token"""
+        self.token_count += 1
+        current_time = time.time()
+
+        # Print every token or every 5 seconds
+        if current_time - self.last_profile_print < 5.0 and self.token_count % 10 != 0:
+            return
+
+        self.logger.info("\n" + "="*80)
+        self.logger.info(f"PROFILING SUMMARY - Token {self.token_count}")
+        self.logger.info("="*80)
+
+        # Analyze async usage
+        total_async = sum(self.profile_data.get(f'layer_{i}_async_used', [0])[-1]
+                         for i in self.offloaded_layers if f'layer_{i}_async_used' in self.profile_data)
+        total_offloaded = len(self.offloaded_layers)
+        async_pct = (total_async / total_offloaded * 100) if total_offloaded > 0 else 0
+
+        self.logger.info(f"Async usage: {total_async}/{total_offloaded} layers ({async_pct:.0f}%)")
+
+        # Per-layer timing
+        for layer_idx in self.offloaded_layers:
+            pre_key = f'layer_{layer_idx}_pre_transfer'
+            post_key = f'layer_{layer_idx}_post_transfer'
+
+            if pre_key in self.profile_data and self.profile_data[pre_key]:
+                pre_time = self.profile_data[pre_key][-1]
+                post_time = self.profile_data[post_key][-1] if post_key in self.profile_data else 0
+                async_used = self.profile_data.get(f'layer_{layer_idx}_async_used', [0])[-1]
+
+                status = "ASYNC" if async_used else "SYNC"
+                self.logger.info(f"  Layer {layer_idx:2d}: Pre={pre_time:6.2f}ms  Post={post_time:6.2f}ms  [{status}]")
+
+        # Prefetch timing
+        if 'prefetch_submit_time' in self.profile_data and self.profile_data['prefetch_submit_time']:
+            avg_prefetch = sum(self.profile_data['prefetch_submit_time'][-10:]) / len(self.profile_data['prefetch_submit_time'][-10:])
+            self.logger.info(f"\nAvg prefetch submit time: {avg_prefetch:.2f}ms")
+
+        self.logger.info("="*80 + "\n")
+        self.last_profile_print = current_time
+
     def print_stats(self):
         """Print performance statistics"""
         stats = self.get_memory_stats()
@@ -467,6 +552,15 @@ class LayerOffloader:
         self.logger.info(f"Total transfers:         {stats['total_transfers']}")
         self.logger.info(f"Avg transfer time:       {stats['avg_transfer_time_ms']:.2f} ms")
         self.logger.info(f"Estimated overhead:      {stats['estimated_overhead_pct']:.1f}%")
+
+        # Print profiling summary if enabled
+        if self.config.profile and self.profile_data:
+            self.logger.info("\nDetailed Profiling Data:")
+            for key in sorted(self.profile_data.keys()):
+                if self.profile_data[key]:
+                    avg_val = sum(self.profile_data[key]) / len(self.profile_data[key])
+                    self.logger.info(f"  {key}: {avg_val:.2f}ms avg")
+
         self.logger.info("="*60)
 
     def cleanup(self):

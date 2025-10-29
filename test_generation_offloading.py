@@ -514,6 +514,11 @@ def parse_args():
         default=50,
         help="Clear CUDA cache every N transfers (0=never, 50=balanced, 100=rare). Lower = more memory safe, higher = faster. Default: 50"
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable detailed profiling (prints timing breakdown per token)"
+    )
 
     # Generation arguments
     parser.add_argument(
@@ -598,7 +603,8 @@ def main():
             prefetch_next_layer=True,  # Recommended for async
             async_transfer=True,  # Enable async for maximum speed
             cache_clear_interval=args.cache_clear_interval,
-            verbose=False
+            verbose=False,
+            profile=args.profile
         )
         config_name = f"Manual: {args.num_gpu_layers} layers"
 
