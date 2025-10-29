@@ -396,10 +396,6 @@ class LayerOffloader:
         # Synchronize to ensure transfer completes before compute
         torch.cuda.current_stream().synchronize()
 
-        transfer_time_ms = (time.time() - transfer_start) * 1000
-        if self.config.verbose or self.config.profile:
-            print(f"→ Layer {layer_idx}: CPU→GPU: {transfer_time_ms:.2f}ms")
-
         transfer_time = time.time() - overall_start
         self.transfer_times.append(transfer_time)
         self.total_transfers += 1
@@ -436,12 +432,6 @@ class LayerOffloader:
             if layer_idx not in self.layer_compute_times:
                 self.layer_compute_times[layer_idx] = []
             self.layer_compute_times[layer_idx].append(pure_compute_time)
-
-            # Print every 10 tokens
-            if len(self.layer_compute_times[layer_idx]) % 10 == 0:
-                avg_compute = sum(self.layer_compute_times[layer_idx][-10:]) / 10
-                if avg_compute > 50:  # Only print if suspiciously slow (>50ms)
-                    print(f"⚠️ Layer {layer_idx} COMPUTE: {avg_compute:.2f}ms avg (should be <5ms!)")
 
             del self.forward_start_times[layer_idx]
 
@@ -494,22 +484,14 @@ class LayerOffloader:
                 if layer_idx in self.staging_buffers and buffer_key in self.staging_buffers[layer_idx]:
                     buffer.data = self.staging_buffers[layer_idx][buffer_key]
 
-        offload_time_ms = (time.time() - offload_start) * 1000
-        if self.config.verbose or self.config.profile:
-            print(f"← Layer {layer_idx}: GPU→CPU: {offload_time_ms:.2f}ms")
-
         # Smart cache clearing: only clear periodically to avoid overhead
         # Clearing cache is expensive (100-500ms), so we batch it
         cache_cleared = False
         if self.config.cache_clear_interval > 0:
             self.cache_clear_counter += 1
             if self.cache_clear_counter >= self.config.cache_clear_interval:
-                cache_start = time.time()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                cache_time = (time.time() - cache_start) * 1000
-                if self.config.profile and cache_time > 1.0:
-                    print(f"Cache clear took: {cache_time:.2f}ms")
                 self.cache_clear_counter = 0
                 cache_cleared = True
 
