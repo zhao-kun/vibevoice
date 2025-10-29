@@ -363,41 +363,45 @@ class AdaptiveOffloadManager:
             'mid_range': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=20,
-                pin_memory=False,  # Disabled for memory safety
-                prefetch_next_layer=False,  # Disabled to save VRAM
+                pin_memory=True,  # Required for async
+                prefetch_next_layer=True,  # Recommended for async
+                async_transfer=True,
             ),
 
             # RTX 4070 12GB, RTX 3080 12GB
             'consumer': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=12,
-                pin_memory=False,  # Disabled for memory safety
-                prefetch_next_layer=False,  # Disabled to save VRAM
+                pin_memory=True,  # Required for async
+                prefetch_next_layer=True,  # Recommended for async
+                async_transfer=True,
             ),
 
             # RTX 3060 12GB, RTX 4060 Ti 16GB
             'budget': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=8,
-                pin_memory=False,  # Disabled for memory safety
-                prefetch_next_layer=False,  # Disabled to save VRAM
+                pin_memory=True,  # Required for async
+                prefetch_next_layer=True,  # Recommended for async
+                async_transfer=True,
             ),
 
             # RTX 3050 8GB, GTX 1080 8GB
             'minimal': OffloadConfig(
                 enabled=True,
                 num_layers_on_gpu=4,
-                pin_memory=False,  # Disabled for memory safety
-                prefetch_next_layer=False,  # Disabled to save VRAM
-                offload_kv_cache=False,  # Disabled for now
+                pin_memory=True,  # Required for async
+                prefetch_next_layer=True,  # Recommended for async
+                async_transfer=True,
+                offload_kv_cache=False,
             ),
 
             # Alternative naming scheme (layer count based)
-            'light': OffloadConfig(enabled=True, num_layers_on_gpu=20, pin_memory=False, prefetch_next_layer=False),
-            'moderate': OffloadConfig(enabled=True, num_layers_on_gpu=16, pin_memory=False, prefetch_next_layer=False),
-            'balanced': OffloadConfig(enabled=True, num_layers_on_gpu=12, pin_memory=False, prefetch_next_layer=False),
-            'aggressive': OffloadConfig(enabled=True, num_layers_on_gpu=8, pin_memory=False, prefetch_next_layer=False),
-            'extreme': OffloadConfig(enabled=True, num_layers_on_gpu=4, pin_memory=False, prefetch_next_layer=False),
+            'light': OffloadConfig(enabled=True, num_layers_on_gpu=20, pin_memory=True, prefetch_next_layer=True, async_transfer=True),
+            'moderate': OffloadConfig(enabled=True, num_layers_on_gpu=16, pin_memory=True, prefetch_next_layer=True, async_transfer=True),
+            'balanced': OffloadConfig(enabled=True, num_layers_on_gpu=12, pin_memory=True, prefetch_next_layer=True, async_transfer=True),
+            'aggressive': OffloadConfig(enabled=True, num_layers_on_gpu=8, pin_memory=True, prefetch_next_layer=True, async_transfer=True),
+            'extreme': OffloadConfig(enabled=True, num_layers_on_gpu=4, pin_memory=True, prefetch_next_layer=True, async_transfer=True),
         }
 
         if preset not in presets:

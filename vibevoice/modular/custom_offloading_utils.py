@@ -21,6 +21,8 @@ import logging
 import time
 import gc
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, Future
+import threading
 
 
 @dataclass
@@ -39,14 +41,15 @@ class OffloadConfig:
     offload_kv_cache: bool = False
     """Offload KV cache for CPU layers (aggressive memory saving)"""
 
-    pin_memory: bool = False
-    """Use pinned memory for faster CPU<->GPU transfers (disabled by default to save memory)"""
+    pin_memory: bool = True
+    """Use pinned memory for faster CPU<->GPU transfers (REQUIRED for async)"""
 
-    prefetch_next_layer: bool = False
-    """Prefetch next layer during current forward pass (disabled by default to save VRAM)"""
+    prefetch_next_layer: bool = True
+    """Prefetch next layer during current forward pass (HIGHLY RECOMMENDED for async)"""
 
-    async_transfer: bool = False
-    """Use async transfers (experimental)"""
+    async_transfer: bool = True
+    """Use async transfers with ThreadPoolExecutor (RECOMMENDED for speed)"""
+
 
     cache_clear_interval: int = 50
     """Clear CUDA cache every N layer transfers (0 = never, 50 = balanced, default: 50)"""
@@ -104,9 +107,15 @@ class LayerOffloader:
         self.pre_forward_hooks: Dict[int, torch.utils.hooks.RemovableHandle] = {}
         self.post_forward_hooks: Dict[int, torch.utils.hooks.RemovableHandle] = {}
 
+        # Async transfer support
+        self.thread_pool: Optional[ThreadPoolExecutor] = None
+        self.transfer_futures: Dict[int, Future] = {}
+        self.transfer_lock = threading.Lock()
+
         # Prefetching support
         self.next_layer_stream: Optional[torch.cuda.Stream] = None
         self.prefetch_buffer: Dict[int, Dict[str, torch.Tensor]] = {}
+        self.prefetch_events: Dict[int, torch.cuda.Event] = {}
 
         # Memory tracking
         self.transfer_times: List[float] = []
@@ -142,6 +151,10 @@ class LayerOffloader:
 
         # Register hooks for automatic transfers
         self._register_hooks()
+
+        # Setup async transfer thread pool
+        if self.config.async_transfer:
+            self.thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="offload")
 
         # Setup prefetch stream
         if self.config.prefetch_next_layer and torch.cuda.is_available():
@@ -186,6 +199,36 @@ class LayerOffloader:
 
         if self.config.verbose:
             self.logger.debug(f"Moved layer {layer_idx} to CPU")
+
+    def _async_move_to_gpu(self, layer_idx: int):
+        """
+        Asynchronously move layer to GPU using thread pool.
+
+        Args:
+            layer_idx: Index of layer to move
+        """
+        layer = self.language_model.layers[layer_idx]
+
+        # Move to GPU with non-blocking transfer (requires pinned memory)
+        layer.to(self.device, non_blocking=True)
+
+        if self.config.verbose:
+            self.logger.debug(f"Layer {layer_idx}: Async GPU transfer started")
+
+    def _async_move_to_cpu(self, layer_idx: int):
+        """
+        Asynchronously move layer to CPU using thread pool.
+
+        Args:
+            layer_idx: Index of layer to move
+        """
+        layer = self.language_model.layers[layer_idx]
+
+        # Move to CPU with non-blocking transfer
+        layer.cpu()
+
+        if self.config.verbose:
+            self.logger.debug(f"Layer {layer_idx}: Async CPU transfer started")
 
     def _ensure_layer_on_gpu(self, layer_idx: int):
         """
@@ -235,21 +278,23 @@ class LayerOffloader:
         """
         start = time.time()
 
-        # Check if we have prefetched this layer
-        if layer_idx in self.prefetch_buffer:
-            # Wait for async transfer to complete
-            if self.next_layer_stream is not None:
-                self.next_layer_stream.synchronize()
+        # Wait for async transfer if it was submitted
+        if layer_idx in self.transfer_futures:
+            future = self.transfer_futures.pop(layer_idx)
+            future.result()  # Wait for completion
 
-            # Weights are already on GPU from prefetch
-            self.prefetch_buffer.pop(layer_idx)
+            # Wait for event if using prefetch stream
+            if layer_idx in self.prefetch_events:
+                event = self.prefetch_events.pop(layer_idx)
+                event.synchronize()
 
             if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Using prefetched weights")
+                self.logger.debug(f"Layer {layer_idx}: Async transfer completed")
         else:
-            # Synchronous transfer with non_blocking for pinned memory
+            # Fallback to synchronous transfer
             if self.config.pin_memory:
                 module.to(self.device, non_blocking=True)
+                torch.cuda.current_stream().synchronize()
             else:
                 module.to(self.device)
 
@@ -260,9 +305,9 @@ class LayerOffloader:
         self.transfer_times.append(transfer_time)
         self.total_transfers += 1
 
-        # Prefetch next layer if enabled
+        # Start async transfer of next layer if enabled
         if self.config.prefetch_next_layer and layer_idx + 1 in self.offloaded_layers:
-            self._prefetch_layer(layer_idx + 1)
+            self._start_async_prefetch(layer_idx + 1)
 
         return args, kwargs
 
@@ -278,8 +323,20 @@ class LayerOffloader:
         Returns:
             Outputs (unchanged)
         """
-        # Move back to CPU to free VRAM immediately
-        module.cpu()
+        # Submit async CPU transfer if using thread pool
+        if self.config.async_transfer and self.thread_pool is not None:
+            # Submit async move to CPU
+            future = self.thread_pool.submit(self._async_move_to_cpu, layer_idx)
+            # Don't wait - let it happen in background
+
+            if self.config.verbose:
+                self.logger.debug(f"Layer {layer_idx}: Async CPU transfer submitted")
+        else:
+            # Synchronous move to CPU
+            module.cpu()
+
+            if self.config.verbose:
+                self.logger.debug(f"Layer {layer_idx}: Moved back to CPU")
 
         # Smart cache clearing: only clear periodically to avoid overhead
         # Clearing cache is expensive (100-500ms), so we batch it
@@ -290,18 +347,43 @@ class LayerOffloader:
                     torch.cuda.empty_cache()
                 self.cache_clear_counter = 0
 
-        # Note: We don't re-pin memory here to avoid memory duplication
-        # Pinning is only done once during initial setup in _move_layer_to_cpu
-        # Subsequent transfers will use the already-pinned tensors
-
-        if self.config.verbose:
-            self.logger.debug(f"Layer {layer_idx}: Moved back to CPU")
-
         return outputs
 
-    def _prefetch_layer(self, layer_idx: int):
+    def _start_async_prefetch(self, layer_idx: int):
         """
-        Prefetch next layer asynchronously in background.
+        Start async prefetch of next layer using ThreadPoolExecutor.
+
+        Args:
+            layer_idx: Layer index to prefetch
+        """
+        if not self.config.prefetch_next_layer:
+            return
+
+        if layer_idx in self.transfer_futures:
+            return  # Already submitted
+
+        if self.config.async_transfer and self.thread_pool is not None:
+            # Submit async GPU transfer
+            future = self.thread_pool.submit(self._async_move_to_gpu, layer_idx)
+
+            with self.transfer_lock:
+                self.transfer_futures[layer_idx] = future
+
+            # Create event for synchronization if using stream
+            if self.next_layer_stream is not None:
+                event = torch.cuda.Event()
+                event.record(self.next_layer_stream)
+                self.prefetch_events[layer_idx] = event
+
+            if self.config.verbose:
+                self.logger.debug(f"Layer {layer_idx}: Async prefetch submitted")
+        else:
+            # Fallback to old prefetch method
+            self._prefetch_layer_sync(layer_idx)
+
+    def _prefetch_layer_sync(self, layer_idx: int):
+        """
+        Synchronous prefetch (fallback).
 
         Args:
             layer_idx: Layer index to prefetch
@@ -320,7 +402,7 @@ class LayerOffloader:
             layer.to(self.device, non_blocking=True)
 
         if self.config.verbose:
-            self.logger.debug(f"Layer {layer_idx}: Started prefetch")
+            self.logger.debug(f"Layer {layer_idx}: Started sync prefetch")
 
     def synchronize(self):
         """Synchronize all async transfers"""
@@ -389,6 +471,11 @@ class LayerOffloader:
 
     def cleanup(self):
         """Remove all hooks and cleanup resources"""
+        # Shutdown thread pool
+        if self.thread_pool is not None:
+            self.thread_pool.shutdown(wait=True)
+            self.thread_pool = None
+
         for handle in self.pre_forward_hooks.values():
             handle.remove()
         for handle in self.post_forward_hooks.values():
@@ -397,6 +484,8 @@ class LayerOffloader:
         self.pre_forward_hooks.clear()
         self.post_forward_hooks.clear()
         self.prefetch_buffer.clear()
+        self.transfer_futures.clear()
+        self.prefetch_events.clear()
 
         self.logger.info("LayerOffloader cleaned up")
 

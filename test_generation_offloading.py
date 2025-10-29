@@ -155,6 +155,7 @@ def load_model(model_file: str, config_path: str, dtype: torch.dtype,
         print(f"Layers on GPU: {offload_config.num_layers_on_gpu}")
         print(f"Pin memory: {offload_config.pin_memory}")
         print(f"Prefetch next layer: {offload_config.prefetch_next_layer}")
+        print(f"Async transfer: {offload_config.async_transfer}")
         cache_msg = "Never" if offload_config.cache_clear_interval == 0 else f"Every {offload_config.cache_clear_interval} transfers"
         print(f"Cache clearing: {cache_msg}")
         print("="*70 + "\n")
@@ -384,8 +385,9 @@ def benchmark_configurations(args):
         config = OffloadConfig(
             enabled=True,
             num_layers_on_gpu=num_layers,
-            pin_memory=False,  # Disabled for memory safety
-            prefetch_next_layer=False,  # Disabled to save VRAM
+            pin_memory=True,  # Required for async
+            prefetch_next_layer=True,  # Recommended for async
+            async_transfer=True,  # Enable async
             cache_clear_interval=50,
             verbose=False
         )
@@ -592,8 +594,9 @@ def main():
         offload_config = OffloadConfig(
             enabled=True,
             num_layers_on_gpu=args.num_gpu_layers,
-            pin_memory=False,  # Disabled for memory safety
-            prefetch_next_layer=False,  # Disabled to save VRAM
+            pin_memory=True,  # Required for async transfers
+            prefetch_next_layer=True,  # Recommended for async
+            async_transfer=True,  # Enable async for maximum speed
             cache_clear_interval=args.cache_clear_interval,
             verbose=False
         )
