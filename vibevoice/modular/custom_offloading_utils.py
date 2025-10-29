@@ -163,19 +163,25 @@ class LayerOffloader:
         # Setup async transfer thread pool
         if self.config.async_transfer:
             self.thread_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="offload")
+            self.logger.info(f"ThreadPoolExecutor initialized for async transfers")
+        else:
+            self.logger.warning(f"Async transfer DISABLED - will use synchronous transfers")
 
         # Setup prefetch stream
         if self.config.prefetch_next_layer and torch.cuda.is_available():
             self.next_layer_stream = torch.cuda.Stream()
+            self.logger.info(f"CUDA stream created for prefetching")
+        else:
+            self.logger.warning(f"Prefetching DISABLED")
 
         self.logger.info(
             f"LayerOffloader initialized: {len(self.offloaded_layers)} layers on CPU, "
             f"{len(self.gpu_resident_layers)} layers on GPU"
         )
 
-        if self.config.verbose:
-            self.logger.info(f"  Offloaded layers: {sorted(self.offloaded_layers)}")
-            self.logger.info(f"  GPU resident layers: {sorted(self.gpu_resident_layers)}")
+        # Always print which layers are offloaded for debugging
+        self.logger.info(f"  Offloaded layers (on CPU): {sorted(self.offloaded_layers)}")
+        self.logger.info(f"  GPU resident layers: {sorted(self.gpu_resident_layers)}")
 
     def _move_layer_to_cpu(self, layer_idx: int):
         """
@@ -270,6 +276,9 @@ class LayerOffloader:
 
             self.pre_forward_hooks[layer_idx] = pre_handle
             self.post_forward_hooks[layer_idx] = post_handle
+
+            if self.config.verbose or self.config.profile:
+                self.logger.info(f"  Registered hooks for layer {layer_idx}")
 
     def _pre_forward_transfer(self, layer_idx: int, module: nn.Module, args, kwargs):
         """
@@ -400,9 +409,18 @@ class LayerOffloader:
             layer_idx: Layer index to prefetch
         """
         if not self.config.prefetch_next_layer:
+            if self.config.profile:
+                self.logger.warning(f"Prefetch requested for layer {layer_idx} but prefetching is DISABLED")
+            return
+
+        if layer_idx not in self.offloaded_layers:
+            if self.config.profile:
+                self.logger.info(f"Layer {layer_idx} not in offloaded layers {self.offloaded_layers}, skipping prefetch")
             return
 
         if layer_idx in self.transfer_futures:
+            if self.config.profile:
+                self.logger.warning(f"Layer {layer_idx} already has pending transfer, skipping")
             return  # Already submitted
 
         if self.config.async_transfer and self.thread_pool is not None:
@@ -418,9 +436,11 @@ class LayerOffloader:
                 event.record(self.next_layer_stream)
                 self.prefetch_events[layer_idx] = event
 
-            if self.config.verbose:
-                self.logger.debug(f"Layer {layer_idx}: Async prefetch submitted")
+            if self.config.verbose or self.config.profile:
+                self.logger.info(f"Layer {layer_idx}: Async prefetch submitted to thread pool")
         else:
+            if self.config.profile:
+                self.logger.warning(f"Async transfer disabled or thread pool is None, using sync prefetch")
             # Fallback to old prefetch method
             self._prefetch_layer_sync(layer_idx)
 
