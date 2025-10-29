@@ -289,6 +289,11 @@ class LayerOffloader:
         """
         overall_start = time.time()
 
+        # Store start time for computing actual forward time
+        if self.config.profile:
+            self.forward_start_times = getattr(self, 'forward_start_times', {})
+            self.forward_start_times[layer_idx] = time.time()
+
         # Check layer device before transfer (for debugging)
         if self.config.profile and layer_idx == 0:
             first_param = next(module.parameters())
@@ -368,6 +373,28 @@ class LayerOffloader:
             Outputs (unchanged)
         """
         post_start = time.time()
+
+        # Calculate actual forward computation time
+        if self.config.profile and hasattr(self, 'forward_start_times') and layer_idx in self.forward_start_times:
+            forward_compute_time = (post_start - self.forward_start_times[layer_idx]) * 1000
+            # Subtract transfer times to get pure compute
+            pre_transfer_time = self.profile_data.get(f'layer_{layer_idx}_pre_transfer', [0])[-1] if f'layer_{layer_idx}_pre_transfer' in self.profile_data else 0
+            pure_compute_time = forward_compute_time - pre_transfer_time
+
+            # Store for analysis
+            if not hasattr(self, 'layer_compute_times'):
+                self.layer_compute_times = {}
+            if layer_idx not in self.layer_compute_times:
+                self.layer_compute_times[layer_idx] = []
+            self.layer_compute_times[layer_idx].append(pure_compute_time)
+
+            # Print every 10 tokens
+            if len(self.layer_compute_times[layer_idx]) % 10 == 0:
+                avg_compute = sum(self.layer_compute_times[layer_idx][-10:]) / 10
+                if avg_compute > 50:  # Only print if suspiciously slow (>50ms)
+                    print(f"⚠️ Layer {layer_idx} COMPUTE: {avg_compute:.2f}ms avg (should be <5ms!)")
+
+            del self.forward_start_times[layer_idx]
 
         # Submit async CPU transfer if using thread pool
         if self.config.async_transfer and self.thread_pool is not None:
@@ -543,6 +570,19 @@ class LayerOffloader:
         print("\n" + "="*80)
         print(f"PROFILING SUMMARY - Token {self.token_count}")
         print("="*80)
+
+        # Show per-layer compute times if available
+        if hasattr(self, 'layer_compute_times') and self.layer_compute_times:
+            print("\nPer-Layer Compute Times (pure GPU compute, excluding transfers):")
+            total_compute = 0
+            for layer_idx in sorted(self.layer_compute_times.keys()):
+                if self.layer_compute_times[layer_idx]:
+                    avg_time = sum(self.layer_compute_times[layer_idx][-10:]) / len(self.layer_compute_times[layer_idx][-10:])
+                    total_compute += avg_time
+                    status = "⚠️ SLOW!" if avg_time > 50 else "✓"
+                    print(f"  Layer {layer_idx:2d}: {avg_time:7.2f}ms  {status}")
+            print(f"  Total: {total_compute:7.2f}ms (expected: ~{len(self.offloaded_layers) * 1}ms for {len(self.offloaded_layers)} layers)")
+            print()
 
         # Analyze async usage
         total_async = sum(self.profile_data.get(f'layer_{i}_async_used', [0])[-1]
