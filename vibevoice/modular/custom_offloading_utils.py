@@ -405,7 +405,7 @@ class LayerOffloader:
 
             del self.forward_start_times[layer_idx]
 
-        # Transfer layer from GPU back to CPU staging buffer (non-blocking)
+        # Transfer layer from GPU back to CPU staging buffer
         offload_start = time.time()
 
         layer = self.language_model.layers[layer_idx]
@@ -424,9 +424,24 @@ class LayerOffloader:
                         scale_buffer = self.staging_buffers[layer_idx][scale_key]
                         scale_buffer.copy_(param.scale, non_blocking=True)
 
+        # Wait for copies to complete before swapping pointers
+        torch.cuda.current_stream().synchronize()
+
+        # Swap parameter pointers back to CPU staging buffers
+        for name, param in layer.named_parameters():
+            if layer_idx in self.staging_buffers and name in self.staging_buffers[layer_idx]:
+                # Swap param.data to staging buffer
+                param.data = self.staging_buffers[layer_idx][name]
+
+                # Handle Float8 scale
+                if hasattr(param, 'scale') and param.scale is not None:
+                    scale_key = f"{name}_scale"
+                    if scale_key in self.staging_buffers[layer_idx]:
+                        param.scale = self.staging_buffers[layer_idx][scale_key]
+
         offload_time_ms = (time.time() - offload_start) * 1000
         if self.config.verbose or self.config.profile:
-            print(f"← Layer {layer_idx}: GPU→CPU: {offload_time_ms:.2f}ms (non-blocking)")
+            print(f"← Layer {layer_idx}: GPU→CPU: {offload_time_ms:.2f}ms")
 
         # Smart cache clearing: only clear periodically to avoid overhead
         # Clearing cache is expensive (100-500ms), so we batch it
