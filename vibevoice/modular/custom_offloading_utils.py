@@ -103,8 +103,8 @@ class LayerOffloader:
         self.offloaded_layers: Set[int] = set()
         self.gpu_resident_layers: Set[int] = set()
 
-        # Track which layers have been pinned (to avoid redundant pinning)
-        self.pinned_layers: Set[int] = set()
+        # Staging buffers for fast transfers (like kohya-ss)
+        self.staging_buffers: Dict[int, Dict[str, torch.Tensor]] = {}
 
         # Hooks for automatic transfer
         self.pre_forward_hooks: Dict[int, torch.utils.hooks.RemovableHandle] = {}
@@ -117,7 +117,6 @@ class LayerOffloader:
 
         # Prefetching support
         self.next_layer_stream: Optional[torch.cuda.Stream] = None
-        self.prefetch_buffer: Dict[int, Dict[str, torch.Tensor]] = {}
         self.prefetch_events: Dict[int, torch.cuda.Event] = {}
 
         # Memory tracking
@@ -179,77 +178,128 @@ class LayerOffloader:
 
     def _move_layer_to_cpu(self, layer_idx: int):
         """
-        Move a layer from GPU to CPU (Float8-aware).
+        Move a layer from GPU to CPU using staging buffers (kohya-ss approach).
 
         Args:
             layer_idx: Index of layer to move
         """
         layer = self.language_model.layers[layer_idx]
 
-        # Move layer to CPU first
-        layer.cpu()
+        # Create staging buffers for this layer if not exists
+        if layer_idx not in self.staging_buffers:
+            self.staging_buffers[layer_idx] = {}
 
-        if self.config.pin_memory and layer_idx not in self.pinned_layers:
-            # Pin memory for faster transfers (~30% speedup)
-            # After layer.cpu(), all parameters are on CPU, so we can directly pin them
-            for param in layer.parameters():
-                # Pin the parameter data
-                if param.device.type == 'cpu' and not param.data.is_pinned():
-                    param.data = param.data.pin_memory()
+            # Pre-allocate pinned CPU memory for each parameter
+            for name, param in layer.named_parameters():
+                # Allocate pinned memory with same shape and dtype
+                staging_buffer = torch.empty_like(param.data, device='cpu', pin_memory=True)
+                self.staging_buffers[layer_idx][name] = staging_buffer
 
-                # Handle Float8 scale tensors (AutoCast wrapper)
+                # Handle Float8 scale tensors
                 if hasattr(param, 'scale') and param.scale is not None:
-                    if param.scale.device.type == 'cpu' and not param.scale.is_pinned():
-                        param.scale = param.scale.pin_memory()
+                    scale_buffer = torch.empty_like(param.scale, device='cpu', pin_memory=True)
+                    self.staging_buffers[layer_idx][f"{name}_scale"] = scale_buffer
 
-            # Mark this layer as pinned
-            self.pinned_layers.add(layer_idx)
+        # Copy parameters to staging buffers (fast pointer swap)
+        for name, param in layer.named_parameters():
+            staging_buffer = self.staging_buffers[layer_idx][name]
+            # Non-blocking copy from GPU to pinned CPU memory
+            staging_buffer.copy_(param.data, non_blocking=True)
+
+            # Handle Float8 scale
+            if hasattr(param, 'scale') and param.scale is not None:
+                scale_buffer = self.staging_buffers[layer_idx][f"{name}_scale"]
+                scale_buffer.copy_(param.scale, non_blocking=True)
+
+        # Now swap parameter data to staging buffers (fast, no allocation)
+        for name, param in layer.named_parameters():
+            # Swap parameter data pointer to staging buffer
+            param.data = self.staging_buffers[layer_idx][name]
+
+            # Handle Float8 scale
+            if hasattr(param, 'scale') and param.scale is not None:
+                param.scale = self.staging_buffers[layer_idx][f"{name}_scale"]
 
         if self.config.verbose:
-            self.logger.debug(f"Moved layer {layer_idx} to CPU")
+            self.logger.debug(f"Moved layer {layer_idx} to CPU (staging buffer)")
 
     def _async_move_to_gpu(self, layer_idx: int):
         """
-        Asynchronously move layer to GPU using thread pool.
+        Asynchronously move layer to GPU using staging buffers.
 
         Args:
             layer_idx: Index of layer to move
         """
-        layer = self.language_model.layers[layer_idx]
-
-        # Move to GPU with non-blocking transfer (requires pinned memory)
-        layer.to(self.device, non_blocking=True)
+        # Use staging buffer approach for fast transfer
+        self._ensure_layer_on_gpu(layer_idx)
 
         if self.config.verbose:
-            self.logger.debug(f"Layer {layer_idx}: Async GPU transfer started")
+            self.logger.debug(f"Layer {layer_idx}: Async GPU transfer from staging buffer started")
 
     def _async_move_to_cpu(self, layer_idx: int):
         """
-        Asynchronously move layer to CPU using thread pool.
+        Asynchronously move layer to CPU using staging buffers.
 
         Args:
             layer_idx: Index of layer to move
         """
         layer = self.language_model.layers[layer_idx]
 
-        # Move to CPU with non-blocking transfer
-        layer.cpu()
+        # Copy parameters back to staging buffers (non-blocking)
+        if layer_idx in self.staging_buffers:
+            for name, param in layer.named_parameters():
+                if name in self.staging_buffers[layer_idx]:
+                    staging_buffer = self.staging_buffers[layer_idx][name]
+                    staging_buffer.copy_(param.data, non_blocking=True)
+
+                    # Handle Float8 scale
+                    if hasattr(param, 'scale') and param.scale is not None:
+                        scale_key = f"{name}_scale"
+                        if scale_key in self.staging_buffers[layer_idx]:
+                            scale_buffer = self.staging_buffers[layer_idx][scale_key]
+                            scale_buffer.copy_(param.scale, non_blocking=True)
 
         if self.config.verbose:
-            self.logger.debug(f"Layer {layer_idx}: Async CPU transfer started")
+            self.logger.debug(f"Layer {layer_idx}: Async CPU transfer to staging buffer started")
 
     def _ensure_layer_on_gpu(self, layer_idx: int):
         """
-        Ensure a layer is on GPU.
+        Ensure a layer is on GPU using staging buffers (kohya-ss approach).
 
         Args:
             layer_idx: Index of layer to move
         """
         layer = self.language_model.layers[layer_idx]
-        layer.to(self.device)
+
+        # If staging buffers don't exist yet, layer is already on GPU
+        if layer_idx not in self.staging_buffers:
+            return
+
+        # Allocate GPU tensors for parameters (or reuse existing)
+        for name, param in layer.named_parameters():
+            staging_buffer = self.staging_buffers[layer_idx][name]
+
+            # Allocate GPU memory if not already allocated
+            if param.data.device != self.device or param.data.shape != staging_buffer.shape:
+                gpu_tensor = torch.empty_like(staging_buffer, device=self.device)
+            else:
+                gpu_tensor = param.data
+
+            # Non-blocking copy from staging buffer to GPU
+            gpu_tensor.copy_(staging_buffer, non_blocking=True)
+
+            # Swap parameter data to GPU tensor
+            param.data = gpu_tensor
+
+            # Handle Float8 scale
+            if hasattr(param, 'scale') and param.scale is not None and f"{name}_scale" in self.staging_buffers[layer_idx]:
+                scale_buffer = self.staging_buffers[layer_idx][f"{name}_scale"]
+                gpu_scale = torch.empty_like(scale_buffer, device=self.device)
+                gpu_scale.copy_(scale_buffer, non_blocking=True)
+                param.scale = gpu_scale
 
         if self.config.verbose:
-            self.logger.debug(f"Ensured layer {layer_idx} is on GPU")
+            self.logger.debug(f"Ensured layer {layer_idx} is on GPU (staging buffer)")
 
     def _register_hooks(self):
         """Register pre/post forward hooks for automatic offloading"""
@@ -299,34 +349,16 @@ class LayerOffloader:
             first_param = next(module.parameters())
             print(f"🔍 Layer {layer_idx} device BEFORE transfer: {first_param.device}")
 
-        # Wait for async transfer if it was submitted
-        wait_start = time.time()
-        async_used = False
-        if layer_idx in self.transfer_futures:
-            async_used = True
-            future = self.transfer_futures.pop(layer_idx)
-            future.result()  # Wait for completion
+        # Transfer layer from CPU staging buffer to GPU
+        transfer_start = time.time()
+        self._ensure_layer_on_gpu(layer_idx)
 
-            # Wait for event if using prefetch stream
-            if layer_idx in self.prefetch_events:
-                event = self.prefetch_events.pop(layer_idx)
-                event.synchronize()
+        # Synchronize to ensure transfer completes before compute
+        torch.cuda.current_stream().synchronize()
 
-            if self.config.verbose:
-                wait_time = (time.time() - wait_start) * 1000
-                print(f"Layer {layer_idx}: Async transfer wait: {wait_time:.2f}ms")
-        else:
-            # Fallback to synchronous transfer
-            sync_start = time.time()
-            if self.config.pin_memory:
-                module.to(self.device, non_blocking=True)
-                torch.cuda.current_stream().synchronize()
-            else:
-                module.to(self.device)
-
-            if self.config.verbose or self.config.profile:
-                sync_time = (time.time() - sync_start) * 1000
-                print(f"⚠️  Layer {layer_idx}: SYNC transfer (NOT ASYNC!): {sync_time:.2f}ms")
+        transfer_time_ms = (time.time() - transfer_start) * 1000
+        if self.config.verbose or self.config.profile:
+            print(f"→ Layer {layer_idx}: CPU→GPU: {transfer_time_ms:.2f}ms")
 
         transfer_time = time.time() - overall_start
         self.transfer_times.append(transfer_time)
@@ -334,29 +366,6 @@ class LayerOffloader:
 
         if self.config.profile:
             self.profile_data[f'layer_{layer_idx}_pre_transfer'].append(transfer_time * 1000)
-            self.profile_data[f'layer_{layer_idx}_async_used'].append(1 if async_used else 0)
-
-        # Start async transfer of next layer if enabled
-        prefetch_start = time.time()
-        if self.config.prefetch_next_layer:
-            if layer_idx + 1 in self.offloaded_layers:
-                # Normal sequential prefetch
-                self._start_async_prefetch(layer_idx + 1)
-                if self.config.profile:
-                    prefetch_time = (time.time() - prefetch_start) * 1000
-                    self.profile_data['prefetch_submit_time'].append(prefetch_time)
-            elif self.offloaded_layers:
-                # Wrap-around prefetch: If this is the last offloaded layer, prefetch the first one for next token
-                max_offloaded = max(self.offloaded_layers)
-                min_offloaded = min(self.offloaded_layers)
-                if layer_idx == max_offloaded:
-                    # We just finished the last offloaded layer, prefetch the first one for next token
-                    if self.config.profile:
-                        print(f"🔄 Wrap-around: Layer {layer_idx} → prefetching Layer {min_offloaded} for next token")
-                    self._start_async_prefetch(min_offloaded)
-                    if self.config.profile:
-                        prefetch_time = (time.time() - prefetch_start) * 1000
-                        self.profile_data['prefetch_submit_time'].append(prefetch_time)
 
         return args, kwargs
 
@@ -396,23 +405,28 @@ class LayerOffloader:
 
             del self.forward_start_times[layer_idx]
 
-        # Submit async CPU transfer if using thread pool
-        if self.config.async_transfer and self.thread_pool is not None:
-            # Submit async move to CPU
-            future = self.thread_pool.submit(self._async_move_to_cpu, layer_idx)
-            # Don't wait - let it happen in background
+        # Transfer layer from GPU back to CPU staging buffer (non-blocking)
+        offload_start = time.time()
 
-            if self.config.verbose:
-                submit_time = (time.time() - post_start) * 1000
-                print(f"Layer {layer_idx}: Async CPU offload submitted: {submit_time:.2f}ms")
-        else:
-            # Synchronous move to CPU
-            cpu_start = time.time()
-            module.cpu()
-            cpu_time = (time.time() - cpu_start) * 1000
+        layer = self.language_model.layers[layer_idx]
 
-            if self.config.verbose or self.config.profile:
-                print(f"⚠️  Layer {layer_idx}: SYNC CPU transfer: {cpu_time:.2f}ms")
+        # Copy parameters back to staging buffers (non-blocking)
+        for name, param in layer.named_parameters():
+            if layer_idx in self.staging_buffers and name in self.staging_buffers[layer_idx]:
+                staging_buffer = self.staging_buffers[layer_idx][name]
+                # Non-blocking copy from GPU to CPU staging buffer
+                staging_buffer.copy_(param.data, non_blocking=True)
+
+                # Handle Float8 scale
+                if hasattr(param, 'scale') and param.scale is not None:
+                    scale_key = f"{name}_scale"
+                    if scale_key in self.staging_buffers[layer_idx]:
+                        scale_buffer = self.staging_buffers[layer_idx][scale_key]
+                        scale_buffer.copy_(param.scale, non_blocking=True)
+
+        offload_time_ms = (time.time() - offload_start) * 1000
+        if self.config.verbose or self.config.profile:
+            print(f"← Layer {layer_idx}: GPU→CPU: {offload_time_ms:.2f}ms (non-blocking)")
 
         # Smart cache clearing: only clear periodically to avoid overhead
         # Clearing cache is expensive (100-500ms), so we batch it
@@ -486,7 +500,7 @@ class LayerOffloader:
 
     def _prefetch_layer_sync(self, layer_idx: int):
         """
-        Synchronous prefetch (fallback).
+        Synchronous prefetch (fallback) - uses staging buffers.
 
         Args:
             layer_idx: Layer index to prefetch
@@ -494,18 +508,12 @@ class LayerOffloader:
         if not self.config.prefetch_next_layer or self.next_layer_stream is None:
             return
 
-        layer = self.language_model.layers[layer_idx]
-
-        # Mark that we're prefetching this layer
-        self.prefetch_buffer[layer_idx] = {}
-
-        # Use background stream for async transfer
+        # Use background stream for async transfer from staging buffer to GPU
         with torch.cuda.stream(self.next_layer_stream):
-            # Move layer to GPU in background
-            layer.to(self.device, non_blocking=True)
+            self._ensure_layer_on_gpu(layer_idx)
 
         if self.config.verbose:
-            self.logger.debug(f"Layer {layer_idx}: Started sync prefetch")
+            self.logger.debug(f"Layer {layer_idx}: Started sync prefetch from staging buffer")
 
     def synchronize(self):
         """Synchronize all async transfers"""
@@ -584,13 +592,13 @@ class LayerOffloader:
             print(f"  Total: {total_compute:7.2f}ms (expected: ~{len(self.offloaded_layers) * 1}ms for {len(self.offloaded_layers)} layers)")
             print()
 
-        # Analyze async usage
-        total_async = sum(self.profile_data.get(f'layer_{i}_async_used', [0])[-1]
-                         for i in self.offloaded_layers if f'layer_{i}_async_used' in self.profile_data)
+        # Analyze GPU cache hit rate
+        total_cache_hits = sum(self.profile_data.get(f'layer_{i}_cache_hit', [0])[-1]
+                              for i in self.offloaded_layers if f'layer_{i}_cache_hit' in self.profile_data)
         total_offloaded = len(self.offloaded_layers)
-        async_pct = (total_async / total_offloaded * 100) if total_offloaded > 0 else 0
+        cache_hit_pct = (total_cache_hits / total_offloaded * 100) if total_offloaded > 0 else 0
 
-        print(f"Async usage: {total_async}/{total_offloaded} layers ({async_pct:.0f}%)")
+        print(f"GPU Cache: {total_cache_hits}/{total_offloaded} layers cached ({cache_hit_pct:.0f}% hit rate)")
 
         # Per-layer timing
         for layer_idx in sorted(self.offloaded_layers):
@@ -600,9 +608,9 @@ class LayerOffloader:
             if pre_key in self.profile_data and self.profile_data[pre_key]:
                 pre_time = self.profile_data[pre_key][-1]
                 post_time = self.profile_data[post_key][-1] if post_key in self.profile_data else 0
-                async_used = self.profile_data.get(f'layer_{layer_idx}_async_used', [0])[-1]
+                cache_hit = self.profile_data.get(f'layer_{layer_idx}_cache_hit', [0])[-1]
 
-                status = "ASYNC" if async_used else "SYNC"
+                status = "CACHED" if cache_hit else "LOADED"
                 print(f"  Layer {layer_idx:2d}: Pre={pre_time:6.2f}ms  Post={post_time:6.2f}ms  [{status}]")
 
         # Prefetch timing
@@ -650,7 +658,7 @@ class LayerOffloader:
 
         self.pre_forward_hooks.clear()
         self.post_forward_hooks.clear()
-        self.prefetch_buffer.clear()
+        self.staging_buffers.clear()
         self.transfer_futures.clear()
         self.prefetch_events.clear()
 
