@@ -200,7 +200,13 @@ class LayerOffloader:
                     scale_buffer = torch.empty_like(param.scale, device='cpu', pin_memory=True)
                     self.staging_buffers[layer_idx][f"{name}_scale"] = scale_buffer
 
-        # Copy parameters to staging buffers (fast pointer swap)
+            # Also handle buffers (like running stats)
+            for name, buffer in layer.named_buffers():
+                if buffer is not None:
+                    buffer_staging = torch.empty_like(buffer, device='cpu', pin_memory=True)
+                    self.staging_buffers[layer_idx][f"buffer_{name}"] = buffer_staging
+
+        # Copy parameters to staging buffers
         for name, param in layer.named_parameters():
             staging_buffer = self.staging_buffers[layer_idx][name]
             # Non-blocking copy from GPU to pinned CPU memory
@@ -211,6 +217,17 @@ class LayerOffloader:
                 scale_buffer = self.staging_buffers[layer_idx][f"{name}_scale"]
                 scale_buffer.copy_(param.scale, non_blocking=True)
 
+        # Copy buffers to staging buffers
+        for name, buffer in layer.named_buffers():
+            if buffer is not None:
+                buffer_key = f"buffer_{name}"
+                if buffer_key in self.staging_buffers[layer_idx]:
+                    buffer_staging = self.staging_buffers[layer_idx][buffer_key]
+                    buffer_staging.copy_(buffer, non_blocking=True)
+
+        # Synchronize to ensure all copies complete before swapping pointers
+        torch.cuda.current_stream().synchronize()
+
         # Now swap parameter data to staging buffers (fast, no allocation)
         for name, param in layer.named_parameters():
             # Swap parameter data pointer to staging buffer
@@ -219,6 +236,15 @@ class LayerOffloader:
             # Handle Float8 scale
             if hasattr(param, 'scale') and param.scale is not None:
                 param.scale = self.staging_buffers[layer_idx][f"{name}_scale"]
+
+        # Swap buffer data to staging buffers
+        for name, buffer in layer.named_buffers():
+            if buffer is not None:
+                buffer_key = f"buffer_{name}"
+                if buffer_key in self.staging_buffers[layer_idx]:
+                    # Buffers need special handling - can't reassign directly
+                    # Instead, copy in-place
+                    buffer.data = self.staging_buffers[layer_idx][buffer_key]
 
         if self.config.verbose:
             self.logger.debug(f"Moved layer {layer_idx} to CPU (staging buffer)")
@@ -259,6 +285,14 @@ class LayerOffloader:
                             scale_buffer = self.staging_buffers[layer_idx][scale_key]
                             scale_buffer.copy_(param.scale, non_blocking=True)
 
+            # Copy buffers back to staging buffers
+            for name, buffer in layer.named_buffers():
+                if buffer is not None:
+                    buffer_key = f"buffer_{name}"
+                    if buffer_key in self.staging_buffers[layer_idx]:
+                        buffer_staging = self.staging_buffers[layer_idx][buffer_key]
+                        buffer_staging.copy_(buffer.data, non_blocking=True)
+
         if self.config.verbose:
             self.logger.debug(f"Layer {layer_idx}: Async CPU transfer to staging buffer started")
 
@@ -297,6 +331,16 @@ class LayerOffloader:
                 gpu_scale = torch.empty_like(scale_buffer, device=self.device)
                 gpu_scale.copy_(scale_buffer, non_blocking=True)
                 param.scale = gpu_scale
+
+        # Handle buffers
+        for name, buffer in layer.named_buffers():
+            if buffer is not None:
+                buffer_key = f"buffer_{name}"
+                if buffer_key in self.staging_buffers[layer_idx]:
+                    buffer_staging = self.staging_buffers[layer_idx][buffer_key]
+                    gpu_buffer = torch.empty_like(buffer_staging, device=self.device)
+                    gpu_buffer.copy_(buffer_staging, non_blocking=True)
+                    buffer.data = gpu_buffer
 
         if self.config.verbose:
             self.logger.debug(f"Ensured layer {layer_idx} is on GPU (staging buffer)")
@@ -424,6 +468,14 @@ class LayerOffloader:
                         scale_buffer = self.staging_buffers[layer_idx][scale_key]
                         scale_buffer.copy_(param.scale, non_blocking=True)
 
+        # Copy buffers back to staging buffers
+        for name, buffer in layer.named_buffers():
+            if buffer is not None:
+                buffer_key = f"buffer_{name}"
+                if layer_idx in self.staging_buffers and buffer_key in self.staging_buffers[layer_idx]:
+                    buffer_staging = self.staging_buffers[layer_idx][buffer_key]
+                    buffer_staging.copy_(buffer.data, non_blocking=True)
+
         # Wait for copies to complete before swapping pointers
         torch.cuda.current_stream().synchronize()
 
@@ -438,6 +490,13 @@ class LayerOffloader:
                     scale_key = f"{name}_scale"
                     if scale_key in self.staging_buffers[layer_idx]:
                         param.scale = self.staging_buffers[layer_idx][scale_key]
+
+        # Swap buffer pointers back to CPU staging buffers
+        for name, buffer in layer.named_buffers():
+            if buffer is not None:
+                buffer_key = f"buffer_{name}"
+                if layer_idx in self.staging_buffers and buffer_key in self.staging_buffers[layer_idx]:
+                    buffer.data = self.staging_buffers[layer_idx][buffer_key]
 
         offload_time_ms = (time.time() - offload_start) * 1000
         if self.config.verbose or self.config.profile:
