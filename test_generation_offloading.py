@@ -274,6 +274,7 @@ def run_generation(args, offload_config: Optional[OffloadConfig] = None) -> Gene
         tokenizer=processor.tokenizer,
         generation_config={'do_sample': False},
         verbose=True,
+        profile=args.profile,  # Pass profiling flag to enable timing breakdown
     )
 
     generation_time = time.time() - start_time

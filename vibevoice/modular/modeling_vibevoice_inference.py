@@ -411,6 +411,19 @@ class VibeVoiceForConditionalInference(nn.Module):
         inputs_embeds = None
         verbose = kwargs.get("verbose", False)
 
+        # Timing instrumentation for profiling
+        profile = kwargs.get("profile", False)
+        if profile:
+            import time as time_module
+            timing_stats = {
+                'transformer': [],
+                'diffusion': [],
+                'audio_decode': [],
+                'semantic_encode': [],
+                'other': []
+            }
+            timing_token_count = 0
+
 
         # Initialize audio chunks storage for each sample
         audio_chunks = [[] for _ in range(batch_size)]
@@ -495,9 +508,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                 prefill_inputs = {'inputs_embeds': inputs_embeds}
 
             # Forward pass through the model
+            if profile:
+                transformer_start = time_module.time()
             outputs = self(
                 **model_inputs, **prefill_inputs, logits_to_keep=1, return_dict=True, output_attentions=False, output_hidden_states=False,
             )
+            if profile:
+                transformer_time = (time_module.time() - transformer_start) * 1000
+                timing_stats['transformer'].append(transformer_time)
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=False,
             )
@@ -649,15 +667,22 @@ class VibeVoiceForConditionalInference(nn.Module):
                 positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]
                 negative_condition = negative_outputs.last_hidden_state[diffusion_indices, -1, :]
 
+                if profile:
+                    diffusion_start = time_module.time()
                 speech_latent = self.sample_speech_tokens(
                     positive_condition,
                     negative_condition,
                     cfg_scale=cfg_scale,
                     step=step
                 ).unsqueeze(1)
+                if profile:
+                    diffusion_time = (time_module.time() - diffusion_start) * 1000
+                    timing_stats['diffusion'].append(diffusion_time)
 
                 # Decode acoustic latent to audio using acoustic streaming cache
                 scaled_latent = speech_latent / self.model.speech_scaling_factor.to(speech_latent.device) - self.model.speech_bias_factor.to(speech_latent.device)
+                if profile:
+                    audio_decode_start = time_module.time()
                 audio_chunk = self.model.acoustic_tokenizer.decode(
                     scaled_latent.to(self.model.acoustic_tokenizer.device),
                     cache=acoustic_cache,  # Use acoustic-specific cache
@@ -665,6 +690,9 @@ class VibeVoiceForConditionalInference(nn.Module):
                     use_cache=True,
                     debug=False
                 )
+                if profile:
+                    audio_decode_time = (time_module.time() - audio_decode_start) * 1000
+                    timing_stats['audio_decode'].append(audio_decode_time)
 
                 # Store audio chunks for each sample
                 for i, sample_idx in enumerate(diffusion_indices):
@@ -679,6 +707,8 @@ class VibeVoiceForConditionalInference(nn.Module):
                     audio_streamer.put(audio_chunk, diffusion_indices)
 
                 # Encode audio to semantic features using semantic streaming cache
+                if profile:
+                    semantic_encode_start = time_module.time()
                 semantic_features = self.model.semantic_tokenizer.encode(
                     audio_chunk,
                     cache=semantic_cache,  # Use semantic-specific cache
@@ -686,6 +716,9 @@ class VibeVoiceForConditionalInference(nn.Module):
                     use_cache=True,
                     debug=False
                 ).mean  # semantic tokenizer has no VAE.
+                if profile:
+                    semantic_encode_time = (time_module.time() - semantic_encode_start) * 1000
+                    timing_stats['semantic_encode'].append(semantic_encode_time)
 
                 # Combine acoustic and semantic features for next input
                 acoustic_embed = self.model.acoustic_connector(speech_latent)
@@ -698,6 +731,22 @@ class VibeVoiceForConditionalInference(nn.Module):
 
             # Set inputs_embeds for next iteration
             inputs_embeds = next_inputs_embeds
+
+            # Print timing summary every 10 tokens
+            if profile:
+                timing_token_count += 1
+                if timing_token_count % 10 == 0 and timing_stats['transformer']:
+                    print("\n" + "="*80)
+                    print(f"TIMING SUMMARY - Token {timing_token_count}")
+                    print("="*80)
+                    for key in ['transformer', 'diffusion', 'audio_decode', 'semantic_encode']:
+                        if timing_stats[key]:
+                            # Average over last 10 tokens
+                            recent_times = timing_stats[key][-10:] if len(timing_stats[key]) >= 10 else timing_stats[key]
+                            avg_time = sum(recent_times) / len(recent_times)
+                            count = len(timing_stats[key])
+                            print(f"{key.replace('_', ' ').title():<20}: {avg_time:7.2f}ms avg (last {len(recent_times)} tokens, {count} total calls)")
+                    print("="*80 + "\n")
 
         if audio_streamer is not None:
             audio_streamer.end()
@@ -712,6 +761,29 @@ class VibeVoiceForConditionalInference(nn.Module):
             else:
                 # If no audio was generated for this sample, append None
                 final_audio_outputs.append(None)
+
+        # Print final timing summary if profiling enabled
+        if profile and timing_stats:
+            print("\n" + "="*80)
+            print("FINAL GENERATION TIMING BREAKDOWN (Overall Averages)")
+            print("="*80)
+            for key in ['transformer', 'diffusion', 'audio_decode', 'semantic_encode']:
+                if timing_stats[key]:
+                    avg_time = sum(timing_stats[key]) / len(timing_stats[key])
+                    total_time = sum(timing_stats[key])
+                    count = len(timing_stats[key])
+                    print(f"{key.replace('_', ' ').title():<20}: {avg_time:7.2f}ms avg  ({total_time:8.1f}ms total, {count} calls)")
+
+            # Calculate totals
+            all_times = []
+            for times in timing_stats.values():
+                all_times.extend(times)
+            if all_times:
+                total_measured = sum(all_times)
+                avg_per_token = total_measured / timing_token_count if timing_token_count > 0 else 0
+                print(f"\n{'Total measured':<20}: {total_measured:8.1f}ms ({avg_per_token:.1f}ms per token avg)")
+                print(f"{'Tokens generated':<20}: {timing_token_count}")
+            print("="*80 + "\n")
 
         return VibeVoiceGenerationOutput(
             sequences=input_ids,
