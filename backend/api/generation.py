@@ -15,6 +15,57 @@ from transformers.utils import logging
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 
+
+def _validate_offloading_config(offloading: dict) -> dict:
+    """
+    Validate offloading configuration from request.
+
+    Args:
+        offloading: Offloading config dict from request (can be None)
+
+    Returns:
+        Validated offloading config dict or None if disabled/not provided
+
+    Raises:
+        ValueError: If config is invalid
+    """
+    # If not provided or disabled, return None (backward compatible)
+    if not offloading or not offloading.get('enabled', False):
+        return None
+
+    mode = offloading.get('mode', 'preset')
+
+    # Validate mode
+    if mode not in ['preset', 'manual']:
+        raise ValueError(f"Invalid offloading mode: '{mode}'. Must be 'preset' or 'manual'")
+
+    if mode == 'preset':
+        preset = offloading.get('preset', 'balanced')
+        valid_presets = ['balanced', 'aggressive', 'extreme']
+        if preset not in valid_presets:
+            raise ValueError(f"Invalid preset: '{preset}'. Must be one of: {', '.join(valid_presets)}")
+
+        return {
+            'enabled': True,
+            'mode': 'preset',
+            'preset': preset
+        }
+
+    elif mode == 'manual':
+        num_gpu_layers = offloading.get('num_gpu_layers')
+        if num_gpu_layers is None:
+            raise ValueError("num_gpu_layers is required for manual mode")
+
+        if not isinstance(num_gpu_layers, int) or num_gpu_layers < 1 or num_gpu_layers > 28:
+            raise ValueError(f"num_gpu_layers must be an integer between 1 and 28, got: {num_gpu_layers}")
+
+        return {
+            'enabled': True,
+            'mode': 'manual',
+            'num_gpu_layers': num_gpu_layers
+        }
+
+
 @api_bp.route('/projects/<project_id>/generations', methods=['POST'])
 def get_voice_generation_service(project_id: str):
     """Get VoiceGenerationService instance for a specific project"""
@@ -40,6 +91,16 @@ def get_voice_generation_service(project_id: str):
         model_dtype = data.get('model_dtype', 'float8_e4m3fn')
         attn_implementation = data.get('attn_implementation', 'sdpa')
 
+        # Parse and validate offloading configuration (NEW)
+        offloading_config = data.get('offloading')
+        try:
+            validated_offloading = _validate_offloading_config(offloading_config)
+        except ValueError as e:
+            return jsonify({
+                'error': 'Invalid offloading configuration',
+                'message': str(e)
+            }), 400
+
         # Get project service to find project directory
         project_service = ProjectService(workspace_dir=current_app.config['WORKSPACE_DIR'],
                                          meta_file_name=current_app.config['PROJECTS_META_FILE'])
@@ -64,7 +125,8 @@ def get_voice_generation_service(project_id: str):
                                                     cfg_scale=cfg_scale,
                                                     model_dtype=model_dtype,
                                                     attn_implementation=attn_implementation,
-                                                    project_id=project_id)
+                                                    project_id=project_id,
+                                                    offloading_config=validated_offloading)
         if not generation:
             return jsonify({
                 'error': 'Generation Failed',

@@ -3,7 +3,29 @@
 import React, { useState } from 'react';
 import { useSession } from '@/lib/SessionContext';
 import { useGeneration } from '@/lib/GenerationContext';
-import type { CreateGenerationRequest } from '@/types/generation';
+import type { CreateGenerationRequest, OffloadingMode, OffloadingPreset } from '@/types/generation';
+
+// Preset information for offloading configurations
+const PRESET_INFO = {
+  balanced: {
+    vram_savings: '~5GB',
+    slowdown: '~2.0x',
+    gpu_layers: 12,
+    description: 'Recommended for 12GB+ GPUs (RTX 3060 12GB, 4070)',
+  },
+  aggressive: {
+    vram_savings: '~6GB',
+    slowdown: '~2.5x',
+    gpu_layers: 8,
+    description: 'Recommended for 8-12GB GPUs (RTX 3060 8GB, 4060 8GB)',
+  },
+  extreme: {
+    vram_savings: '~7GB',
+    slowdown: '~3.5x',
+    gpu_layers: 4,
+    description: 'Recommended for 6-8GB GPUs (minimum viable VRAM)',
+  },
+};
 
 export default function GenerationForm() {
   const { sessions } = useSession();
@@ -16,6 +38,12 @@ export default function GenerationForm() {
     model_dtype: 'float8_e4m3fn',
     attn_implementation: 'sdpa'
   });
+
+  // Offloading configuration state
+  const [offloadingEnabled, setOffloadingEnabled] = useState(false);
+  const [offloadingMode, setOffloadingMode] = useState<OffloadingMode>('preset');
+  const [offloadingPreset, setOffloadingPreset] = useState<OffloadingPreset>('balanced');
+  const [manualGpuLayers, setManualGpuLayers] = useState(20);
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -41,8 +69,21 @@ export default function GenerationForm() {
       return;
     }
 
+    // Build offloading configuration
+    const offloading = offloadingEnabled ? {
+      enabled: true,
+      mode: offloadingMode,
+      ...(offloadingMode === 'preset'
+        ? { preset: offloadingPreset }
+        : { num_gpu_layers: manualGpuLayers }
+      )
+    } : undefined;
+
     try {
-      const generation = await startGeneration(formData);
+      const generation = await startGeneration({
+        ...formData,
+        offloading,
+      });
       setSuccess(`Generation started successfully! Request ID: ${generation.request_id}`);
 
       // Reset form after 3 seconds
@@ -205,6 +246,120 @@ export default function GenerationForm() {
           <p className="text-xs text-gray-500 mt-1">
             Fixed to SDPA (Scaled Dot Product Attention)
           </p>
+        </div>
+
+        {/* Offloading Configuration Section */}
+        <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+          <div className="flex items-center gap-2 mb-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-700">Offloading (VRAM Optimization)</h3>
+          </div>
+
+          {/* Enable Checkbox */}
+          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={offloadingEnabled}
+              onChange={(e) => setOffloadingEnabled(e.target.checked)}
+              className="w-4 h-4 text-blue-500 rounded focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-gray-700">Enable Offloading</span>
+          </label>
+
+          {offloadingEnabled && (
+            <>
+              {/* Mode Selection (Preset vs Manual) */}
+              <div className="mb-4 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="preset"
+                    checked={offloadingMode === 'preset'}
+                    onChange={(e) => setOffloadingMode(e.target.value as OffloadingMode)}
+                    className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Preset (Recommended)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="manual"
+                    checked={offloadingMode === 'manual'}
+                    onChange={(e) => setOffloadingMode(e.target.value as OffloadingMode)}
+                    className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Manual (Advanced)</span>
+                </label>
+              </div>
+
+              {/* Preset Dropdown */}
+              {offloadingMode === 'preset' && (
+                <div>
+                  <label htmlFor="offloadingPreset" className="block text-sm font-medium text-gray-700 mb-1">
+                    Preset Configuration
+                  </label>
+                  <select
+                    id="offloadingPreset"
+                    value={offloadingPreset}
+                    onChange={(e) => setOffloadingPreset(e.target.value as OffloadingPreset)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="balanced">Balanced</option>
+                    <option value="aggressive">Aggressive</option>
+                    <option value="extreme">Extreme</option>
+                  </select>
+
+                  {/* Info card for selected preset */}
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="text-sm space-y-1">
+                      <div className="font-medium text-blue-900">
+                        {offloadingPreset.charAt(0).toUpperCase() + offloadingPreset.slice(1)} Configuration
+                      </div>
+                      <div className="text-blue-800">
+                        <strong>GPU Layers:</strong> {PRESET_INFO[offloadingPreset].gpu_layers} / 28
+                      </div>
+                      <div className="text-blue-800">
+                        <strong>VRAM Savings:</strong> {PRESET_INFO[offloadingPreset].vram_savings}
+                      </div>
+                      <div className="text-blue-800">
+                        <strong>Speed:</strong> {PRESET_INFO[offloadingPreset].slowdown} slower than no offloading
+                      </div>
+                      <div className="text-blue-700 text-xs mt-2">
+                        {PRESET_INFO[offloadingPreset].description}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual Slider */}
+              {offloadingMode === 'manual' && (
+                <div>
+                  <label htmlFor="manualGpuLayers" className="block text-sm font-medium text-gray-700 mb-1">
+                    GPU Layers: {manualGpuLayers}
+                  </label>
+                  <input
+                    type="range"
+                    id="manualGpuLayers"
+                    min="1"
+                    max="28"
+                    value={manualGpuLayers}
+                    onChange={(e) => setManualGpuLayers(parseInt(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>1 (More VRAM savings)</span>
+                    <span>28 (Less VRAM savings)</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Fewer GPU layers = More VRAM savings but slower inference
+                  </p>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Error Message */}
