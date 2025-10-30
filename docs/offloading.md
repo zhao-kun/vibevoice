@@ -89,7 +89,7 @@ classDiagram
 
     LayerOffloader --> OffloadConfig
     AdaptiveOffloadManager --> OffloadConfig
-    LayerOffloader --> VibeVoiceModel
+    VibeVoiceModel --> LayerOffloader
 ```
 
 ### File Structure
