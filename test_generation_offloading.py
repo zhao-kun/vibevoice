@@ -73,6 +73,11 @@ class GenerationMetrics:
     offload_config: Optional[OffloadConfig] = None
     transfer_overhead_ms: float = 0.0
     avg_layer_transfer_ms: float = 0.0
+    # Detailed breakdown (new)
+    total_compute_ms: float = 0.0
+    total_pre_transfer_ms: float = 0.0
+    total_post_transfer_ms: float = 0.0
+    theoretical_savings_ms: float = 0.0
 
 
 def parse_txt_script(txt_content: str) -> Tuple[List[str], List[str]]:
@@ -296,10 +301,19 @@ def run_generation(args, offload_config: Optional[OffloadConfig] = None) -> Gene
     # Get offloading statistics
     transfer_overhead_ms = 0.0
     avg_layer_transfer_ms = 0.0
+    total_compute_ms = 0.0
+    total_pre_transfer_ms = 0.0
+    total_post_transfer_ms = 0.0
+    theoretical_savings_ms = 0.0
+
     if model.offloader is not None:
         stats = model.offloader.get_stats()
         transfer_overhead_ms = stats['total_transfer_time_ms']
         avg_layer_transfer_ms = stats['avg_layer_transfer_time_ms']
+        total_compute_ms = stats.get('total_compute_time_ms', 0.0)
+        total_pre_transfer_ms = stats.get('total_pre_transfer_time_ms', 0.0)
+        total_post_transfer_ms = stats.get('total_post_transfer_time_ms', 0.0)
+        theoretical_savings_ms = stats.get('theoretical_savings_with_async_ms', 0.0)
         model.offloader.print_stats()
 
     # Save output
@@ -324,7 +338,11 @@ def run_generation(args, offload_config: Optional[OffloadConfig] = None) -> Gene
         vram_available_gb=vram_total,
         offload_config=offload_config,
         transfer_overhead_ms=transfer_overhead_ms,
-        avg_layer_transfer_ms=avg_layer_transfer_ms
+        avg_layer_transfer_ms=avg_layer_transfer_ms,
+        total_compute_ms=total_compute_ms,
+        total_pre_transfer_ms=total_pre_transfer_ms,
+        total_post_transfer_ms=total_post_transfer_ms,
+        theoretical_savings_ms=theoretical_savings_ms
     )
 
 
@@ -357,6 +375,23 @@ def print_summary(metrics: GenerationMetrics, config_name: str = "Default"):
         print(f"  Avg layer transfer: {metrics.avg_layer_transfer_ms:.2f}ms")
         overhead_percent = (metrics.transfer_overhead_ms / 1000 / metrics.generation_time) * 100
         print(f"  Overhead percentage: {overhead_percent:.1f}%")
+
+        # Detailed breakdown if available
+        if metrics.total_compute_ms > 0:
+            print(f"\n  Time Breakdown:")
+            print(f"    Pure Computation: {metrics.total_compute_ms:.1f}ms ({metrics.total_compute_ms/1000:.1f}s)")
+            print(f"    CPU→GPU Transfers: {metrics.total_pre_transfer_ms:.1f}ms ({metrics.total_pre_transfer_ms/1000:.1f}s)")
+            print(f"    GPU→CPU Releases: {metrics.total_post_transfer_ms:.1f}ms ({metrics.total_post_transfer_ms/1000:.1f}s)")
+
+            if metrics.theoretical_savings_ms > 0:
+                current_total_ms = metrics.total_compute_ms + metrics.total_pre_transfer_ms + metrics.total_post_transfer_ms
+                theoretical_min_ms = current_total_ms - metrics.theoretical_savings_ms
+                print(f"\n  Async Prefetching Potential:")
+                print(f"    Current total: {current_total_ms:.1f}ms")
+                print(f"    Theoretical minimum: {theoretical_min_ms:.1f}ms")
+                print(f"    Potential savings: {metrics.theoretical_savings_ms:.1f}ms ({metrics.theoretical_savings_ms/1000:.1f}s)")
+                speedup_pct = (metrics.theoretical_savings_ms / current_total_ms) * 100
+                print(f"    Potential speedup: {speedup_pct:.1f}% faster")
     else:
         print("\nOffloading: Disabled")
 

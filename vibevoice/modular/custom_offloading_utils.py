@@ -397,7 +397,7 @@ class LayerOffloader:
     def _register_hooks(self):
         """Register pre/post forward hooks for automatic offloading"""
         for layer_idx in self.offloaded_layers:
-            layer = self.language_model.layers[layer_idx]
+            layer: nn.Module = self.language_model.layers[layer_idx]
 
             # Pre-forward hook: Move layer to GPU before forward
             # Note: with_kwargs=True means signature is (module, args, kwargs)
@@ -609,10 +609,39 @@ class LayerOffloader:
         Get detailed statistics for generation metrics.
 
         Returns:
-            Dictionary with detailed statistics including transfer overhead
+            Dictionary with detailed statistics including transfer overhead breakdown
         """
         total_transfer_time_ms = sum(self.transfer_times) * 1000 if self.transfer_times else 0
         avg_layer_transfer_ms = total_transfer_time_ms / len(self.transfer_times) if self.transfer_times else 0
+
+        # Calculate time breakdown
+        total_compute_ms = 0
+        total_pre_transfer_ms = 0
+        total_post_transfer_ms = 0
+
+        if hasattr(self, 'layer_compute_times'):
+            for layer_idx in self.layer_compute_times:
+                if self.layer_compute_times[layer_idx]:
+                    total_compute_ms += sum(self.layer_compute_times[layer_idx])
+
+        if hasattr(self, 'profile_data'):
+            for layer_idx in self.offloaded_layers:
+                pre_key = f'layer_{layer_idx}_pre_transfer'
+                post_key = f'layer_{layer_idx}_post_transfer'
+                if pre_key in self.profile_data:
+                    total_pre_transfer_ms += sum(self.profile_data[pre_key])
+                if post_key in self.profile_data:
+                    total_post_transfer_ms += sum(self.profile_data[post_key])
+
+        # Calculate theoretical minimum with async prefetching
+        avg_pre_transfer = total_pre_transfer_ms / max(len(self.offloaded_layers), 1) if hasattr(self, 'profile_data') else 0
+        num_forwards = len(self.layer_compute_times[min(self.offloaded_layers)]) if hasattr(self, 'layer_compute_times') and self.offloaded_layers else 0
+        theoretical_savings_ms = 0
+        if num_forwards > 0 and total_compute_ms > 0:
+            # Per forward: first layer + max(remaining transfers, compute) + post
+            per_forward_current = (total_pre_transfer_ms + total_compute_ms + total_post_transfer_ms) / num_forwards
+            per_forward_theoretical = avg_pre_transfer + max((total_pre_transfer_ms - avg_pre_transfer) / num_forwards, total_compute_ms / num_forwards) + total_post_transfer_ms / num_forwards
+            theoretical_savings_ms = (per_forward_current - per_forward_theoretical) * num_forwards
 
         return {
             'total_transfer_time_ms': total_transfer_time_ms,
@@ -620,6 +649,10 @@ class LayerOffloader:
             'total_transfers': self.total_transfers,
             'gpu_layers': len(self.gpu_resident_layers),
             'cpu_layers': len(self.offloaded_layers),
+            'total_compute_time_ms': total_compute_ms,
+            'total_pre_transfer_time_ms': total_pre_transfer_ms,
+            'total_post_transfer_time_ms': total_post_transfer_ms,
+            'theoretical_savings_with_async_ms': theoretical_savings_ms,
         }
 
     def _print_profile_summary(self):
@@ -635,46 +668,75 @@ class LayerOffloader:
         print(f"PROFILING SUMMARY - Token {self.token_count}")
         print("="*80)
 
+        # Calculate time breakdown
+        total_compute = 0
+        total_pre_transfer = 0
+        total_post_transfer = 0
+
         # Show per-layer compute times if available
         if hasattr(self, 'layer_compute_times') and self.layer_compute_times:
             print("\nPer-Layer Compute Times (pure GPU compute, excluding transfers):")
-            total_compute = 0
             for layer_idx in sorted(self.layer_compute_times.keys()):
                 if self.layer_compute_times[layer_idx]:
                     avg_time = sum(self.layer_compute_times[layer_idx][-10:]) / len(self.layer_compute_times[layer_idx][-10:])
                     total_compute += avg_time
                     status = "⚠️ SLOW!" if avg_time > 50 else "✓"
                     print(f"  Layer {layer_idx:2d}: {avg_time:7.2f}ms  {status}")
-            print(f"  Total: {total_compute:7.2f}ms (expected: ~{len(self.offloaded_layers) * 1}ms for {len(self.offloaded_layers)} layers)")
+            print(f"  Total Pure Compute: {total_compute:7.2f}ms")
             print()
 
-        # Analyze GPU cache hit rate
-        total_cache_hits = sum(self.profile_data.get(f'layer_{i}_cache_hit', [0])[-1]
-                              for i in self.offloaded_layers if f'layer_{i}_cache_hit' in self.profile_data)
-        total_offloaded = len(self.offloaded_layers)
-        cache_hit_pct = (total_cache_hits / total_offloaded * 100) if total_offloaded > 0 else 0
-
-        print(f"GPU Cache: {total_cache_hits}/{total_offloaded} layers cached ({cache_hit_pct:.0f}% hit rate)")
-
-        # Per-layer timing
+        # Calculate transfer times
         for layer_idx in sorted(self.offloaded_layers):
             pre_key = f'layer_{layer_idx}_pre_transfer'
             post_key = f'layer_{layer_idx}_post_transfer'
 
             if pre_key in self.profile_data and self.profile_data[pre_key]:
-                pre_time = self.profile_data[pre_key][-1]
-                post_time = self.profile_data[post_key][-1] if post_key in self.profile_data else 0
-                cache_hit = self.profile_data.get(f'layer_{layer_idx}_cache_hit', [0])[-1]
+                total_pre_transfer += self.profile_data[pre_key][-1]
+            if post_key in self.profile_data and self.profile_data[post_key]:
+                total_post_transfer += self.profile_data[post_key][-1]
 
-                status = "CACHED" if cache_hit else "LOADED"
-                print(f"  Layer {layer_idx:2d}: Pre={pre_time:6.2f}ms  Post={post_time:6.2f}ms  [{status}]")
+        # Time breakdown analysis
+        current_total = total_pre_transfer + total_compute + total_post_transfer
+        # Theoretical minimum: first layer transfer + max(remaining transfers, compute) + post transfers
+        first_layer_transfer = self.profile_data.get(f'layer_{min(self.offloaded_layers)}_pre_transfer', [0])[-1] if self.offloaded_layers else 0
+        remaining_transfers = total_pre_transfer - first_layer_transfer
+        theoretical_with_prefetch = first_layer_transfer + max(remaining_transfers, total_compute) + total_post_transfer
+        potential_savings = current_total - theoretical_with_prefetch
 
-        # Prefetch timing
-        if 'prefetch_submit_time' in self.profile_data and self.profile_data['prefetch_submit_time']:
-            avg_prefetch = sum(self.profile_data['prefetch_submit_time'][-10:]) / len(self.profile_data['prefetch_submit_time'][-10:])
-            print(f"\nAvg prefetch submit time: {avg_prefetch:.2f}ms")
+        print("="*80)
+        print("TIME BREAKDOWN ANALYSIS (per forward pass)")
+        print("="*80)
+        print(f"1. CPU→GPU Transfers:  {total_pre_transfer:7.2f}ms  ({len(self.offloaded_layers)} layers × ~{total_pre_transfer/len(self.offloaded_layers) if self.offloaded_layers else 0:.1f}ms)")
+        print(f"2. Pure Computation:   {total_compute:7.2f}ms  ({len(self.offloaded_layers)} offloaded layers)")
+        print(f"3. GPU→CPU Releases:   {total_post_transfer:7.2f}ms  (zero-copy pointer swaps)")
+        print(f"   {'─'*76}")
+        print(f"   CURRENT TOTAL:      {current_total:7.2f}ms")
+        print()
+        print(f"THEORETICAL MINIMUM (with perfect async prefetching):")
+        print(f"   - First layer transfer:     {first_layer_transfer:7.2f}ms  (unavoidable)")
+        print(f"   - Remaining operations:     {max(remaining_transfers, total_compute):7.2f}ms  (transfers hidden by compute)")
+        print(f"   - GPU→CPU releases:         {total_post_transfer:7.2f}ms  (unavoidable)")
+        print(f"   {'─'*76}")
+        print(f"   THEORETICAL MINIMUM: {theoretical_with_prefetch:7.2f}ms")
+        print()
+        print(f"POTENTIAL SAVINGS: {potential_savings:7.2f}ms per forward pass ({potential_savings/current_total*100:.1f}% faster)")
+        print(f"                   {potential_savings*2:7.2f}ms per token (with CFG)")
+        print("="*80)
+        print()
 
-        print("="*80 + "\n")
+        # Detailed per-layer timing (optional, for debugging)
+        if self.config.verbose:
+            print("Per-layer timing details:")
+            for layer_idx in sorted(self.offloaded_layers):
+                pre_key = f'layer_{layer_idx}_pre_transfer'
+                post_key = f'layer_{layer_idx}_post_transfer'
+
+                if pre_key in self.profile_data and self.profile_data[pre_key]:
+                    pre_time = self.profile_data[pre_key][-1]
+                    post_time = self.profile_data[post_key][-1] if post_key in self.profile_data else 0
+                    compute_time = self.layer_compute_times.get(layer_idx, [0])[-1] if hasattr(self, 'layer_compute_times') and layer_idx in self.layer_compute_times else 0
+                    print(f"  Layer {layer_idx:2d}: CPU→GPU={pre_time:5.1f}ms  Compute={compute_time:5.1f}ms  Release={post_time:5.1f}ms")
+            print()
         self.last_profile_print = current_time
 
     def print_stats(self):
