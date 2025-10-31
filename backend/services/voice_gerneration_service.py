@@ -153,7 +153,8 @@ class VoiceGenerationService:
 
     def generation(self, dialog_session_id: str, request_id: str, seeds: int = 42,
                    cfg_scale: float = 1.3, model_dtype: str = "float8_e4m3fn",
-                   attn_implementation: str = "sdpa", project_id: str = None) -> Generation:
+                   attn_implementation: str = "sdpa", project_id: str = None,
+                   offloading_config: Optional[Dict[str, Any]] = None) -> Generation:
         """
         Generate voices for a specific dialog session
 
@@ -161,6 +162,7 @@ class VoiceGenerationService:
             dialog_session_id: Dialog session identifier
             request_id: Request identifier
             project_id: Project identifier
+            offloading_config: Offloading configuration dict (optional)
         """
 
         dialog_session = self.dialog_service.get_session(dialog_session_id)
@@ -175,8 +177,14 @@ class VoiceGenerationService:
                                        attn_implementation=attn_implementation,
                                        project_id=project_id,
                                        project_dir=str(self.output_dir))
+
+        # Store offloading config in generation details for reference
+        if offloading_config:
+            generation.details['offloading_config'] = offloading_config
+
         inference = InferenceBase.create(generation, self.speaker_service,
-                                         self.dialog_service, self.meta_file_path)
+                                         self.dialog_service, self.meta_file_path,
+                                         offload_config=offloading_config)
 
         task = Task.from_inference(inference=inference,
                                    file_handler=self.file_handler,

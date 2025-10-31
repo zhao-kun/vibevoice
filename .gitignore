@@ -230,3 +230,4 @@ backend/**/__pycache__/
 
 # Workspace
 workspace/
+outputs_offloading/

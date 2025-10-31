@@ -13,7 +13,6 @@ interface SpeakerRoleContextType {
   uploadVoiceFile: (speakerId: string, file: File) => Promise<void>;
   removeVoiceFile: (speakerId: string) => Promise<void>;
   trimAudio: (speakerId: string, startTime: number, endTime: number) => Promise<void>;
-  hasUnsavedChanges: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -22,7 +21,6 @@ const SpeakerRoleContext = createContext<SpeakerRoleContextType | undefined>(und
 
 export function SpeakerRoleProvider({ children, projectId }: { children: React.ReactNode; projectId: string }) {
   const [speakerRoles, setSpeakerRoles] = useState<SpeakerRole[]>([]);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -245,7 +243,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
         uploadVoiceFile,
         removeVoiceFile,
         trimAudio,
-        hasUnsavedChanges,
         loading,
         error,
       }}

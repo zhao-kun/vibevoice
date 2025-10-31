@@ -14,7 +14,7 @@ export default function ProjectSelector() {
 
   const handleSelectProject = (projectId: string) => {
     selectProject(projectId);
-    router.push("/voice-editor");
+    router.push("/speaker-role");
   };
 
   const handleCreateProject = async () => {
@@ -25,7 +25,7 @@ export default function ProjectSelector() {
         setNewProjectDescription("");
         setShowCreateModal(false);
         // Will automatically navigate via the context update
-        setTimeout(() => router.push("/voice-editor"), 100);
+        setTimeout(() => router.push("/speaker-role"), 100);
       } catch {
         toast.error("Failed to create project. Please try again.");
       }

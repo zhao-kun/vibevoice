@@ -9,6 +9,7 @@
  */
 export async function convertToWav(audioBlob: Blob): Promise<Blob> {
   // Create an audio context
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
   // Read the blob as array buffer

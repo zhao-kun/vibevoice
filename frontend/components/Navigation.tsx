@@ -52,11 +52,17 @@ export default function Navigation() {
   const router = useRouter();
   const { currentProject, projects, selectProject } = useProject();
   const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Task monitoring state
   const [runningGeneration, setRunningGeneration] = useState<Generation | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Only show project-dependent content after client-side mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Poll for running generation globally
   useEffect(() => {
@@ -140,10 +146,10 @@ export default function Navigation() {
           >
             <div className="flex items-center space-x-2 flex-1 min-w-0">
               <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center text-xs font-bold flex-shrink-0">
-                {currentProject?.name.charAt(0).toUpperCase()}
+                {mounted && currentProject ? currentProject.name.charAt(0).toUpperCase() : '?'}
               </div>
               <span className="text-sm font-medium text-white truncate">
-                {currentProject?.name || "No project"}
+                {mounted && currentProject ? currentProject.name : "Loading..."}
               </span>
             </div>
             <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

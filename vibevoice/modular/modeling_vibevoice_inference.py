@@ -90,12 +90,23 @@ class VibeVoiceForConditionalInference(nn.Module):
 
         # Initialize random generator for deterministic speech generation
         self._speech_generator = None
+
+        # Layer offloader for VRAM optimization
+        self.offloader = None
         # self.tie_weights()
 
     def generate_config_from_dict(self, config_dict: Dict) -> GenerationConfig:
         generation_config = GenerationConfig.from_dict(config_dict, return_unused_kwargs=False, _from_model_config=True)
         generation_config._original_object_hash = hash(generation_config)
         return generation_config
+
+    def __del__(self):
+        """Cleanup offloader when model is destroyed"""
+        if hasattr(self, 'offloader') and self.offloader is not None:
+            try:
+                self.offloader.cleanup()
+            except Exception:
+                pass  # Ignore cleanup errors during deletion
 
     @property
     def noise_scheduler(self):
@@ -400,6 +411,20 @@ class VibeVoiceForConditionalInference(nn.Module):
         inputs_embeds = None
         verbose = kwargs.get("verbose", False)
 
+        # Timing instrumentation for profiling
+        profile = kwargs.get("profile", False)
+        if profile:
+            import time as time_module
+            timing_stats = {
+                'transformer_positive': [],
+                'transformer_negative': [],
+                'diffusion': [],
+                'audio_decode': [],
+                'semantic_encode': [],
+                'other': []
+            }
+            timing_token_count = 0
+
 
         # Initialize audio chunks storage for each sample
         audio_chunks = [[] for _ in range(batch_size)]
@@ -484,9 +509,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                 prefill_inputs = {'inputs_embeds': inputs_embeds}
 
             # Forward pass through the model
+            if profile:
+                transformer_start = time_module.time()
             outputs = self(
                 **model_inputs, **prefill_inputs, logits_to_keep=1, return_dict=True, output_attentions=False, output_hidden_states=False,
             )
+            if profile:
+                transformer_time = (time_module.time() - transformer_start) * 1000
+                timing_stats['transformer_positive'].append(transformer_time)
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=False,
             )
@@ -519,9 +549,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                     negative_model_inputs['inputs_embeds'] = inputs_embeds
                     negative_model_inputs['input_ids'] = None
 
+                if profile:
+                    neg_transformer_start = time_module.time()
                 negative_outputs = self(
                     **negative_model_inputs, logits_to_keep=0, return_dict=True, output_attentions=False, output_hidden_states=False,
                 )
+                if profile:
+                    neg_transformer_time = (time_module.time() - neg_transformer_start) * 1000
+                    timing_stats['transformer_negative'].append(neg_transformer_time)
                 negative_model_kwargs = self._update_model_kwargs_for_generation(
                     negative_outputs, negative_model_kwargs, is_encoder_decoder=False,
                 )
@@ -592,9 +627,14 @@ class VibeVoiceForConditionalInference(nn.Module):
                         negative_model_inputs['inputs_embeds'] = inputs_embeds
                         negative_model_inputs['input_ids'] = None
 
+                    if profile:
+                        neg_transformer_start = time_module.time()
                     negative_outputs = self(
                         **negative_model_inputs, logits_to_keep=0, return_dict=True, output_attentions=False, output_hidden_states=False,
                     )
+                    if profile:
+                        neg_transformer_time = (time_module.time() - neg_transformer_start) * 1000
+                        timing_stats['transformer_negative'].append(neg_transformer_time)
                     negative_model_kwargs = self._update_model_kwargs_for_generation(
                         negative_outputs, negative_model_kwargs, is_encoder_decoder=False,
                     )
@@ -638,15 +678,22 @@ class VibeVoiceForConditionalInference(nn.Module):
                 positive_condition = outputs.last_hidden_state[diffusion_indices, -1, :]
                 negative_condition = negative_outputs.last_hidden_state[diffusion_indices, -1, :]
 
+                if profile:
+                    diffusion_start = time_module.time()
                 speech_latent = self.sample_speech_tokens(
                     positive_condition,
                     negative_condition,
                     cfg_scale=cfg_scale,
                     step=step
                 ).unsqueeze(1)
+                if profile:
+                    diffusion_time = (time_module.time() - diffusion_start) * 1000
+                    timing_stats['diffusion'].append(diffusion_time)
 
                 # Decode acoustic latent to audio using acoustic streaming cache
                 scaled_latent = speech_latent / self.model.speech_scaling_factor.to(speech_latent.device) - self.model.speech_bias_factor.to(speech_latent.device)
+                if profile:
+                    audio_decode_start = time_module.time()
                 audio_chunk = self.model.acoustic_tokenizer.decode(
                     scaled_latent.to(self.model.acoustic_tokenizer.device),
                     cache=acoustic_cache,  # Use acoustic-specific cache
@@ -654,6 +701,9 @@ class VibeVoiceForConditionalInference(nn.Module):
                     use_cache=True,
                     debug=False
                 )
+                if profile:
+                    audio_decode_time = (time_module.time() - audio_decode_start) * 1000
+                    timing_stats['audio_decode'].append(audio_decode_time)
 
                 # Store audio chunks for each sample
                 for i, sample_idx in enumerate(diffusion_indices):
@@ -668,6 +718,8 @@ class VibeVoiceForConditionalInference(nn.Module):
                     audio_streamer.put(audio_chunk, diffusion_indices)
 
                 # Encode audio to semantic features using semantic streaming cache
+                if profile:
+                    semantic_encode_start = time_module.time()
                 semantic_features = self.model.semantic_tokenizer.encode(
                     audio_chunk,
                     cache=semantic_cache,  # Use semantic-specific cache
@@ -675,6 +727,9 @@ class VibeVoiceForConditionalInference(nn.Module):
                     use_cache=True,
                     debug=False
                 ).mean  # semantic tokenizer has no VAE.
+                if profile:
+                    semantic_encode_time = (time_module.time() - semantic_encode_start) * 1000
+                    timing_stats['semantic_encode'].append(semantic_encode_time)
 
                 # Combine acoustic and semantic features for next input
                 acoustic_embed = self.model.acoustic_connector(speech_latent)
@@ -687,6 +742,29 @@ class VibeVoiceForConditionalInference(nn.Module):
 
             # Set inputs_embeds for next iteration
             inputs_embeds = next_inputs_embeds
+
+            # Print timing summary every 10 tokens
+            if profile:
+                timing_token_count += 1
+                if timing_token_count % 10 == 0 and timing_stats['transformer_positive']:
+                    print("\n" + "="*80)
+                    print(f"TIMING SUMMARY - Token {timing_token_count}")
+                    print("="*80)
+                    for key in ['transformer_positive', 'transformer_negative', 'diffusion', 'audio_decode', 'semantic_encode']:
+                        if timing_stats[key]:
+                            # Average over last 10 calls
+                            recent_times = timing_stats[key][-10:] if len(timing_stats[key]) >= 10 else timing_stats[key]
+                            avg_time = sum(recent_times) / len(recent_times)
+                            count = len(timing_stats[key])
+                            print(f"{key.replace('_', ' ').title():<25}: {avg_time:7.2f}ms avg (last {len(recent_times)} calls, {count} total)")
+
+                    # Calculate total transformer time
+                    if timing_stats['transformer_positive'] or timing_stats['transformer_negative']:
+                        total_transformer = sum(timing_stats['transformer_positive']) + sum(timing_stats['transformer_negative'])
+                        total_calls = len(timing_stats['transformer_positive']) + len(timing_stats['transformer_negative'])
+                        avg_transformer = total_transformer / total_calls if total_calls > 0 else 0
+                        print(f"{'Total Transformer':<25}: {avg_transformer:7.2f}ms avg ({total_calls} total forwards)")
+                    print("="*80 + "\n")
 
         if audio_streamer is not None:
             audio_streamer.end()
@@ -702,29 +780,81 @@ class VibeVoiceForConditionalInference(nn.Module):
                 # If no audio was generated for this sample, append None
                 final_audio_outputs.append(None)
 
+        # Print final timing summary if profiling enabled
+        if profile and timing_stats:
+            print("\n" + "="*80)
+            print("FINAL GENERATION TIMING BREAKDOWN (Overall Averages)")
+            print("="*80)
+            for key in ['transformer_positive', 'transformer_negative', 'diffusion', 'audio_decode', 'semantic_encode']:
+                if timing_stats[key]:
+                    avg_time = sum(timing_stats[key]) / len(timing_stats[key])
+                    total_time = sum(timing_stats[key])
+                    count = len(timing_stats[key])
+                    print(f"{key.replace('_', ' ').title():<25}: {avg_time:7.2f}ms avg  ({total_time:8.1f}ms total, {count} calls)")
+
+            # Calculate transformer totals
+            if timing_stats['transformer_positive'] or timing_stats['transformer_negative']:
+                total_transformer_time = sum(timing_stats['transformer_positive']) + sum(timing_stats['transformer_negative'])
+                total_transformer_calls = len(timing_stats['transformer_positive']) + len(timing_stats['transformer_negative'])
+                avg_transformer_time = total_transformer_time / total_transformer_calls if total_transformer_calls > 0 else 0
+                print(f"\n{'Total Transformer':<25}: {avg_transformer_time:7.2f}ms avg  ({total_transformer_time:8.1f}ms total, {total_transformer_calls} forwards)")
+
+            # Calculate grand totals
+            all_times = []
+            for times in timing_stats.values():
+                all_times.extend(times)
+            if all_times:
+                total_measured = sum(all_times)
+                avg_per_token = total_measured / timing_token_count if timing_token_count > 0 else 0
+                print(f"{'Total Measured':<25}: {total_measured:8.1f}ms ({avg_per_token:.1f}ms per token avg)")
+                print(f"{'Tokens Generated':<25}: {timing_token_count}")
+            print("="*80 + "\n")
+
         return VibeVoiceGenerationOutput(
             sequences=input_ids,
             speech_outputs=final_audio_outputs if return_speech else None,
             reach_max_step_sample=reach_max_step_sample,
         )
 
+    def _ensure_prediction_head_on_gpu(self):
+        """Move prediction_head to GPU if offloaded"""
+        if self.offloader and self.offloader.config.offload_prediction_head:
+            if self.model.prediction_head.device.type == 'cpu':
+                self.model.prediction_head.to(self.device)
+
+    def _move_prediction_head_to_cpu(self):
+        """Move prediction_head back to CPU if offloaded"""
+        if self.offloader and self.offloader.config.offload_prediction_head:
+            if self.model.prediction_head.device.type != 'cpu':
+                self.model.prediction_head.cpu()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
     @torch.no_grad()
     def sample_speech_tokens(self, condition, neg_condition, cfg_scale=3.0, step=0):
-        self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
-        condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
+        # Ensure prediction_head is on GPU for this operation
+        self._ensure_prediction_head_on_gpu()
 
-        temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=get_generator())
-        speech = temp.to(condition)
+        try:
+            self.model.noise_scheduler.set_timesteps(self.ddpm_inference_steps)
+            condition = torch.cat([condition, neg_condition], dim=0).to(self.model.prediction_head.device)
 
-        for t in self.model.noise_scheduler.timesteps:
-            half = speech[: len(speech) // 2]
-            combined = torch.cat([half, half], dim=0)
-            eps = self.model.prediction_head(combined, t.repeat(combined.shape[0]).to(combined), condition=condition)
-            cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
-            half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
-            eps = torch.cat([half_eps, half_eps], dim=0)
-            speech = self.model.noise_scheduler.step(eps, t, speech).prev_sample
-        return speech[: len(speech) // 2]
+            temp = torch.randn(condition.shape[0], self.config.acoustic_vae_dim, generator=get_generator())
+            speech = temp.to(condition)
+
+            for t in self.model.noise_scheduler.timesteps:
+                half = speech[: len(speech) // 2]
+                combined = torch.cat([half, half], dim=0)
+                eps = self.model.prediction_head(combined, t.repeat(combined.shape[0]).to(combined), condition=condition)
+                cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
+                half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
+                eps = torch.cat([half_eps, half_eps], dim=0)
+                speech = self.model.noise_scheduler.step(eps, t, speech).prev_sample
+
+            return speech[: len(speech) // 2]
+        finally:
+            # Move back to CPU after diffusion loop
+            self._move_prediction_head_to_cpu()
 
     def _prepare_generation_config(self, generation_config: Optional[GenerationConfig], **kwargs: Dict) -> Tuple[GenerationConfig, Dict]:
         """
@@ -819,11 +949,25 @@ class VibeVoiceForConditionalInference(nn.Module):
 
 
     @classmethod
-    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda"):
-        """Load model from pretrained weights."""
+    def from_pretrain(cls, model_path: str, config: VibeVoiceConfig, device="cuda", offload_config=None):
+        """
+        Load model from pretrained weights.
+
+        Args:
+            model_path: Path to model weights (directory or single file)
+            config: Model configuration
+            device: Target device (default: "cuda")
+            offload_config: Optional OffloadConfig for layer offloading
+
+        Returns:
+            Loaded model with optional offloading enabled
+        """
         from util.safetensors_util import MultipleSafetensorLoader, MemoryEfficientSafeOpen
+        from vibevoice.modular.custom_offloading_utils import LayerOffloader
+
         with init_empty_weights():
             model = cls(config)
+
         state_dict = {}
         if os.path.isdir(model_path):
             print(f"Begin to load model from model path {model_path}")
@@ -832,12 +976,59 @@ class VibeVoiceForConditionalInference(nn.Module):
             print(f"Begin to load model from mono model file {model_path}")
             with MemoryEfficientSafeOpen(model_path) as safe:
                 for key in safe.keys():
-                    state_dict[key] = safe.get_tensor(key).to(device)
-        model.load_state_dict(state_dict, strict=False, assign=True)
-        # model.to(device)
+                    state_dict[key] = safe.get_tensor(key)
 
-        # Use to_empty() instead of to() when moving from meta tensors
+        model.load_state_dict(state_dict, strict=False, assign=True)
         print("Model loaded")
+
+        # Setup layer offloading if enabled
+        if offload_config is not None and offload_config.enabled:
+            print(f"Setting up layer offloading: {offload_config.num_layers_on_gpu} layers on GPU")
+
+            # First, move all non-transformer components to GPU
+            # (LayerOffloader only handles transformer layers)
+
+            # Top-level components
+            model.lm_head.to(device)
+
+            # Language model components (except transformer layers)
+            # Convert embedding from Float8 to BF16 to avoid OOM during forward pass
+            if model.model.language_model.embed_tokens.weight.dtype == torch.float8_e4m3fn:
+                print("Converting embedding layer from Float8 to BF16...")
+                # Move to CPU first, convert, then move to GPU
+                model.model.language_model.embed_tokens.cpu()
+                embed_weight_data = model.model.language_model.embed_tokens.weight.data.to(torch.bfloat16)
+                model.model.language_model.embed_tokens.weight.data = embed_weight_data
+
+            model.model.language_model.embed_tokens.to(device)
+            model.model.language_model.norm.to(device)
+
+            # Speech processing components
+            model.model.acoustic_tokenizer.to(device)
+            model.model.semantic_tokenizer.to(device)
+            model.model.acoustic_connector.to(device)
+            model.model.semantic_connector.to(device)
+
+            # Prediction head: conditionally offload to CPU
+            if offload_config.offload_prediction_head:
+                model.model.prediction_head.cpu()
+                print("Prediction head offloaded to CPU (will transfer on-demand)")
+            else:
+                model.model.prediction_head.to(device)
+
+            # Now setup layer offloading for transformer layers only
+            model.offloader = LayerOffloader(
+                language_model=model.model.language_model,
+                config=offload_config,
+                device=torch.device(device),
+                logger=logger
+            )
+            print(f"Layer offloading enabled: {len(model.offloader.offloaded_layers)} layers offloaded")
+        else:
+            # No offloading - move entire model to device
+            model.to(device)
+            print(f"Model moved to {device} (no offloading)")
+
         return model
 
     def _prepare_model_inputs(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import SpeakerSelector from "@/components/SpeakerSelector";
 import DialogEditor from "@/components/DialogEditor";
 import DialogPreview from "@/components/DialogPreview";
@@ -176,22 +177,42 @@ function VoiceEditorContent() {
 }
 
 export default function VoiceEditorPage() {
-  const { currentProject } = useProject();
+  const router = useRouter();
+  const { currentProject, loading } = useProject();
 
-  if (!currentProject) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">No Project Selected</h2>
-          <p className="text-gray-500">Please select a project to edit voice contents</p>
-        </div>
-      </div>
-    );
-  }
+  // Redirect to home page if no project is selected (after loading completes)
+  useEffect(() => {
+    if (!loading && !currentProject) {
+      router.push('/');
+    }
+  }, [loading, currentProject, router]);
+
+  // Show content when project is available
+  const showContent = !loading && currentProject;
 
   return (
-    <SpeakerRoleProvider projectId={currentProject.id}>
-      <VoiceEditorContent />
-    </SpeakerRoleProvider>
+    <div className="h-full flex flex-col">
+      {showContent ? (
+        <SpeakerRoleProvider projectId={currentProject.id}>
+          <VoiceEditorContent />
+        </SpeakerRoleProvider>
+      ) : (
+        <>
+          <header className="bg-white border-b border-gray-200 px-6 py-4">
+            <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
+            <p className="text-sm text-gray-500 mt-1">Create and edit dialog sequences for multi-speaker text-to-speech</p>
+          </header>
+
+          <div className="flex-1 flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">
+                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

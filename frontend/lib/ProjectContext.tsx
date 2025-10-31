@@ -36,6 +36,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
       // Restore current project from localStorage
       const savedCurrentProjectId = localStorage.getItem("vibevoice_current_project");
+
       if (savedCurrentProjectId) {
         const current = projectsWithDates.find((p: Project) => p.id === savedCurrentProjectId);
         if (current) {
