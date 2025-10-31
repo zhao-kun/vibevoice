@@ -21,12 +21,6 @@ function VoiceEditorContent() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  console.log('[VoiceEditorContent] Rendering with:', {
-    hasProject: !!currentProject,
-    hasSession: !!currentSession,
-    speakerRolesCount: speakerRoles.length
-  });
-
   // Convert speaker roles to SpeakerInfo format
   const speakers: SpeakerInfo[] = useMemo(() => {
     return speakerRoles.map(role => ({
@@ -183,24 +177,18 @@ function VoiceEditorContent() {
 }
 
 export default function VoiceEditorPage() {
-  console.log('[VoiceEditor] Component called');
   const router = useRouter();
   const { currentProject, loading } = useProject();
-  console.log('[VoiceEditor] Got context:', { loading, hasProject: !!currentProject });
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
-    console.log('[VoiceEditor] State check:', { loading, hasProject: !!currentProject });
     if (!loading && !currentProject) {
-      console.log('[VoiceEditor] Redirecting to home page');
       router.push('/');
     }
   }, [loading, currentProject, router]);
 
   // Show content when project is available
   const showContent = !loading && currentProject;
-
-  console.log('[VoiceEditor] Render decision:', { loading, hasProject: !!currentProject, showContent });
 
   return (
     <div className="h-full flex flex-col">

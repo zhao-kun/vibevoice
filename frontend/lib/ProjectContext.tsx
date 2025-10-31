@@ -15,18 +15,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   // Load projects from backend on mount
   useEffect(() => {
-    console.log('[ProjectContext] Fucking loading projects on mount');
     loadProjects();
   }, []);
 
   const loadProjects = async () => {
     try {
-      console.log('[ProjectContext] loadProjects: Starting...');
       setLoading(true);
       setError(null);
 
       const response = await api.listProjects();
-      console.log('[ProjectContext] loadProjects: Got', response.projects.length, 'projects');
       const projectsWithDates = response.projects.map((p) => ({
         id: p.id,
         name: p.name,
@@ -39,26 +36,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
       // Restore current project from localStorage
       const savedCurrentProjectId = localStorage.getItem("vibevoice_current_project");
-      console.log('[ProjectContext] loadProjects: Saved project ID from localStorage:', savedCurrentProjectId);
 
       if (savedCurrentProjectId) {
         const current = projectsWithDates.find((p: Project) => p.id === savedCurrentProjectId);
         if (current) {
-          console.log('[ProjectContext] loadProjects: Restored project:', current.id);
           setCurrentProject(current);
         } else if (projectsWithDates.length > 0) {
-          console.log('[ProjectContext] loadProjects: Saved project not found, using first project');
           setCurrentProject(projectsWithDates[0]);
         }
       } else if (projectsWithDates.length > 0) {
-        console.log('[ProjectContext] loadProjects: No saved project, using first project');
         setCurrentProject(projectsWithDates[0]);
       }
     } catch (err) {
-      console.error('[ProjectContext] loadProjects: Error:', err);
+      console.error('Failed to load projects:', err);
       setError(err instanceof Error ? err.message : 'Failed to load projects');
     } finally {
-      console.log('[ProjectContext] loadProjects: Complete, setting loading=false');
       setLoading(false);
     }
   };

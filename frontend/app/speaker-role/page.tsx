@@ -12,17 +12,13 @@ export default function SpeakerRolePage() {
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
-    console.log('[SpeakerRole] State check:', { loading, hasProject: !!currentProject });
     if (!loading && !currentProject) {
-      console.log('[SpeakerRole] Redirecting to home page');
       router.push('/');
     }
   }, [loading, currentProject, router]);
 
   // Show content when project is available
   const showContent = !loading && currentProject;
-
-  console.log('[SpeakerRole] Render decision:', { loading, hasProject: !!currentProject, showContent });
 
   return (
     <div className="h-full flex flex-col">

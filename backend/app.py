@@ -69,18 +69,14 @@ def create_app(config_name=None):
         - Static files are served from dist folder
         - All other routes serve index.html for client-side routing
         """
-        print(f"[DEBUG] serve_spa called with path: '{path}'")
         # If path exists as a static file, serve it
         if path and (static_folder / path).exists():
-            print(f"[DEBUG] Found exact file: {path}")
             return send_from_directory(static_folder, path)
         # Check if .html version exists (for Next.js static export pages)
         html_path = f"{path}.html"
         if path and (static_folder / html_path).exists():
-            print(f"[DEBUG] Found HTML file: {html_path}")
             return send_from_directory(static_folder, html_path)
         # Otherwise, serve index.html for SPA routing
-        print(f"[DEBUG] Serving index.html for path: '{path}'")
         return send_from_directory(static_folder, 'index.html')
 
     return app

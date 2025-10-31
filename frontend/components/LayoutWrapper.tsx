@@ -9,17 +9,11 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    console.log('[LayoutWrapper] Component mounted on client, pathname:', pathname);
     setMounted(true);
   }, [pathname]);
 
   const isHomePage = pathname === "/";
   const showNavigation = mounted && !isHomePage;
-
-  console.log('[LayoutWrapper] Render:', { pathname, mounted, isHomePage, showNavigation });
-  console.log('[LayoutWrapper] BUILD_TIMESTAMP: 2025-10-31-01:30:00');
-  console.log('[LayoutWrapper] children:', typeof children, children);
-  console.log('[LayoutWrapper] About to render children in <main>');
 
   // Always return consistent wrapper structure
   return (

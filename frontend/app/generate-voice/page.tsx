@@ -90,9 +90,7 @@ export default function GenerateVoicePage() {
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
-    console.log('[GenerateVoice] State check:', { loading, hasProject: !!currentProject });
     if (!loading && !currentProject) {
-      console.log('[GenerateVoice] Redirecting to home page');
       router.push('/');
     }
   }, [loading, currentProject, router]);
