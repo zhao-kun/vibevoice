@@ -91,10 +91,7 @@ class InferenceBase(ABC):
         Returns:
             InferenceBase instance
         """
-        if fake:
-            return FakeInferenceEngine(generation, speaker_service, dialog_service, meta_file_path)
-
-        # Parse offload config dict to create OffloadConfig object
+        # Parse offload config dict to create OffloadConfig object (for both real and fake engines)
         offload_config_obj = None
         if offload_config and offload_config.get('enabled', False):
             mode = offload_config.get('mode', 'preset')
@@ -115,6 +112,12 @@ class InferenceBase(ABC):
                     prefetch_next_layer=True,
                     profile=False,
                 )
+
+        if fake:
+            return FakeInferenceEngine(
+                generation, speaker_service, dialog_service, meta_file_path,
+                offload_config=offload_config_obj
+            )
 
         return InferenceEngine(
             generation, speaker_service, dialog_service, meta_file_path,
@@ -324,17 +327,117 @@ class InferenceEngine(InferenceBase):
         return
 
 class FakeInferenceEngine(InferenceBase):
-    def __init__(self, generation, speaker_service, dialog_service, meta_file_path: str):
+    def __init__(self, generation, speaker_service, dialog_service, meta_file_path: str,
+                 offload_config: Optional[OffloadConfig] = None):
+        """
+        Initialize fake inference engine with optional layer offloading.
+
+        Args:
+            generation: Generation object with parameters
+            speaker_service: Service for managing speakers
+            dialog_service: Service for managing dialogs
+            meta_file_path: Path to metadata file
+            offload_config: OffloadConfig object or None (default: no offloading)
+        """
         super().__init__(generation, speaker_service, dialog_service, meta_file_path)
 
+        # Offloading configuration
+        self.offload_config = offload_config
+
     def _load_model(self, dtype: torch.dtype, config: str = None):
+        # Log offloading config for fake engine
+        if self.offload_config and self.offload_config.enabled:
+            logger.info(f"[FAKE] Layer offloading enabled: {self.offload_config.num_layers_on_gpu} layers on GPU")
+        else:
+            logger.info("[FAKE] Layer offloading disabled")
         return FakeModel()
+
+    def _generate_fake_offloading_metrics(self, generation_time: float, num_tokens: int = 100) -> Optional[Dict[str, Any]]:
+        """
+        Generate realistic fake offloading metrics.
+
+        Args:
+            generation_time: Total generation time in seconds
+            num_tokens: Number of generated tokens (ignored, calculated from generation_time)
+
+        Returns:
+            Dictionary with fake offloading metrics or None if offloading not enabled
+        """
+        if not self.offload_config or not self.offload_config.enabled:
+            return None
+
+        total_layers = 28
+        gpu_layers = self.offload_config.num_layers_on_gpu
+        cpu_layers = total_layers - gpu_layers
+
+        # Realistic transfer times based on real measurements (from CLAUDE.md Phase 2 metrics)
+        # CPU→GPU: ~37.8ms per layer, GPU→CPU: ~35.8ms per layer
+        avg_cpu_to_gpu_ms = 37.8
+        avg_gpu_to_cpu_ms = 35.8
+
+        # Calculate realistic overhead percentages based on GPU layer count
+        # These match the expected overhead from CLAUDE.md
+        if gpu_layers >= 12:  # Balanced
+            target_overhead = 0.75  # 75% overhead
+        elif gpu_layers >= 8:   # Aggressive
+            target_overhead = 0.82  # 82% overhead
+        else:                    # Extreme (4 layers)
+            target_overhead = 0.87  # 87% overhead
+
+        # Calculate transfer time from target overhead
+        generation_time_ms = generation_time * 1000
+        total_transfer_ms = generation_time_ms * target_overhead
+
+        # Compute time is the remaining time
+        total_compute_ms = generation_time_ms * (1 - target_overhead)
+
+        # Distribute transfer time across CPU→GPU and GPU→CPU (roughly equal)
+        total_cpu_to_gpu_ms = total_transfer_ms * (avg_cpu_to_gpu_ms / (avg_cpu_to_gpu_ms + avg_gpu_to_cpu_ms))
+        total_gpu_to_cpu_ms = total_transfer_ms * (avg_gpu_to_cpu_ms / (avg_cpu_to_gpu_ms + avg_gpu_to_cpu_ms))
+
+        # Calculate theoretical async savings (could hide ~90% of GPU→CPU transfers)
+        theoretical_savings_ms = total_gpu_to_cpu_ms * 0.9
+
+        # VRAM savings (~310MB per layer for Float8)
+        vram_saved_gb = cpu_layers * 0.31
+
+        # Average layer transfer time (CPU→GPU + GPU→CPU) / 2
+        avg_layer_transfer_ms = (avg_cpu_to_gpu_ms + avg_gpu_to_cpu_ms) / 2
+
+        return {
+            "enabled": True,
+            "gpu_layers": gpu_layers,
+            "cpu_layers": cpu_layers,
+            "transfer_overhead_ms": round(total_transfer_ms, 2),
+            "avg_layer_transfer_ms": round(avg_layer_transfer_ms, 2),
+            "overhead_percentage": round(target_overhead * 100, 2),
+            "time_breakdown": {
+                "pure_computation_ms": round(total_compute_ms, 2),
+                "cpu_to_gpu_transfer_ms": round(total_cpu_to_gpu_ms, 2),
+                "gpu_to_cpu_release_ms": round(total_gpu_to_cpu_ms, 2),
+            },
+            "theoretical_async_savings_ms": round(theoretical_savings_ms, 2),
+            "vram_saved_gb": round(vram_saved_gb, 2),
+        }
 
     def _save_audio(self, outputs: Union[torch.LongTensor, VibeVoiceGenerationOutput],
                     processor: VibeVoiceProcessor, status_update: UpdateStatusCallable,
                     generation_time: float, input_tokens: int, **kwargs) -> None:
         base64_wav_audio = "UklGRiUAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQEAAACA"  # Fake short audio for test
         audio_data = base64.b64decode(base64_wav_audio)
+
+        # Fake token counts
+        fake_generated_tokens = 100
+        fake_total_tokens = input_tokens + fake_generated_tokens
+
+        # Generate fake offloading metrics if enabled
+        offloading_metrics = self._generate_fake_offloading_metrics(generation_time, fake_generated_tokens)
+        if offloading_metrics:
+            self.generation.details['offloading_metrics'] = offloading_metrics
+            logger.info(
+                f"[FAKE] Offloading metrics generated: {offloading_metrics['gpu_layers']} GPU layers, "
+                f"{offloading_metrics['overhead_percentage']:.1f}% overhead"
+            )
 
         # Generate output filename and set it in the generation object
         output_filename = f"{self.generation.request_id}.wav"
@@ -347,8 +450,8 @@ class FakeInferenceEngine(InferenceBase):
                       output_audio_path=str(output_audio_path),
                       prefilling_tokens=input_tokens,
                       generation_time=generation_time,
-                      total_tokens=1024,                        # fake value
-                      generated_tokens=1024,                    # fake value
+                      total_tokens=fake_total_tokens,
+                      generated_tokens=fake_generated_tokens,
                       audio_duration_seconds=5.0,               # fake value
                       real_time_factor=1.0,                     # fake value
                       **kwargs
