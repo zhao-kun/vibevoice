@@ -21,6 +21,12 @@ function VoiceEditorContent() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  console.log('[VoiceEditorContent] Rendering with:', {
+    hasProject: !!currentProject,
+    hasSession: !!currentSession,
+    speakerRolesCount: speakerRoles.length
+  });
+
   // Convert speaker roles to SpeakerInfo format
   const speakers: SpeakerInfo[] = useMemo(() => {
     return speakerRoles.map(role => ({
@@ -183,12 +189,15 @@ export default function VoiceEditorPage() {
 
   // Only render after client-side mount to avoid SSR/SSG mismatch
   useEffect(() => {
+    console.log('[VoiceEditor] Component mounted on client');
     setMounted(true);
   }, []);
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
+    console.log('[VoiceEditor] State check:', { mounted, loading, hasProject: !!currentProject });
     if (mounted && !loading && !currentProject) {
+      console.log('[VoiceEditor] Redirecting to home page');
       router.push('/');
     }
   }, [mounted, loading, currentProject, router]);
@@ -196,22 +205,31 @@ export default function VoiceEditorPage() {
   // Always render consistent wrapper to avoid hydration mismatch
   const showContent = mounted && !loading && currentProject;
 
-  if (!showContent) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-500">
-            {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  console.log('[VoiceEditor] Render decision:', { mounted, loading, hasProject: !!currentProject, showContent });
 
   return (
-    <SpeakerRoleProvider projectId={currentProject.id}>
-      <VoiceEditorContent />
-    </SpeakerRoleProvider>
+    <div className="h-full flex flex-col">
+      {showContent ? (
+        <SpeakerRoleProvider projectId={currentProject.id}>
+          <VoiceEditorContent />
+        </SpeakerRoleProvider>
+      ) : (
+        <>
+          <header className="bg-white border-b border-gray-200 px-6 py-4">
+            <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
+            <p className="text-sm text-gray-500 mt-1">Create and edit dialog sequences for multi-speaker text-to-speech</p>
+          </header>
+
+          <div className="flex-1 flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">
+                {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
