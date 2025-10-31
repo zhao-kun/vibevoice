@@ -28,21 +28,21 @@ OFFLOAD_PRESETS = {
         num_layers_on_gpu=12,  # 12 GPU + 16 CPU
         pin_memory=True,
         prefetch_next_layer=True,
-        profile=False,
+        profile=True,  # Enable profiling for metrics collection
     ),
     "aggressive": OffloadConfig(
         enabled=True,
         num_layers_on_gpu=8,  # 8 GPU + 20 CPU
         pin_memory=True,
         prefetch_next_layer=True,
-        profile=False,
+        profile=True,  # Enable profiling for metrics collection
     ),
     "extreme": OffloadConfig(
         enabled=True,
         num_layers_on_gpu=4,  # 4 GPU + 24 CPU
         pin_memory=True,
         prefetch_next_layer=True,
-        profile=False,
+        profile=True,  # Enable profiling for metrics collection
     ),
 }
 
@@ -110,7 +110,7 @@ class InferenceBase(ABC):
                     num_layers_on_gpu=num_gpu_layers,
                     pin_memory=True,
                     prefetch_next_layer=True,
-                    profile=False,
+                    profile=True,  # Enable profiling for metrics collection
                 )
 
         if fake:
