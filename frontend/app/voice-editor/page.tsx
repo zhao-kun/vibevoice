@@ -196,7 +196,7 @@ export default function VoiceEditorPage() {
   // During SSR/SSG or before mount, show loading state
   if (!mounted || loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center" suppressHydrationWarning>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-500">Loading project...</p>
@@ -208,7 +208,7 @@ export default function VoiceEditorPage() {
   // Show loading while redirecting
   if (!currentProject) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center" suppressHydrationWarning>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-500">Redirecting to project selection...</p>

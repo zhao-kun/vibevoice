@@ -91,20 +91,25 @@ export default function GenerateVoicePage() {
 
   // Only render after client-side mount to avoid SSR/SSG mismatch
   useEffect(() => {
+    console.log('[GenerateVoice] Component mounted on client');
     setMounted(true);
   }, []);
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
+    console.log('[GenerateVoice] State check:', { mounted, loading, hasProject: !!currentProject });
     if (mounted && !loading && !currentProject) {
+      console.log('[GenerateVoice] Redirecting to home page');
       router.push('/');
     }
   }, [mounted, loading, currentProject, router]);
 
   // During SSR/SSG or before mount, show loading state
   if (!mounted || loading) {
+    console.log('[GenerateVoice] Showing loading state:', { mounted, loading });
+
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full flex flex-col" suppressHydrationWarning>
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
           <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
@@ -122,8 +127,10 @@ export default function GenerateVoicePage() {
 
   // Show loading while redirecting
   if (!currentProject) {
+    console.log('[GenerateVoice] No project, showing redirect message');
+
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full flex flex-col" suppressHydrationWarning>
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
           <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
