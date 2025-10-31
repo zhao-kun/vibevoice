@@ -104,53 +104,34 @@ export default function GenerateVoicePage() {
     }
   }, [mounted, loading, currentProject, router]);
 
-  // During SSR/SSG or before mount, show loading state
-  if (!mounted || loading) {
-    console.log('[GenerateVoice] Showing loading state:', { mounted, loading });
-
-    return (
-      <div className="h-full flex flex-col" suppressHydrationWarning>
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
-          <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
-        </header>
-
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-500">Loading project...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show loading while redirecting
-  if (!currentProject) {
-    console.log('[GenerateVoice] No project, showing redirect message');
-
-    return (
-      <div className="h-full flex flex-col" suppressHydrationWarning>
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
-          <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
-        </header>
-
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-500">Redirecting to project selection...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Always render consistent wrapper to avoid hydration mismatch
+  const showContent = mounted && !loading && currentProject;
 
   return (
-    <SessionProvider>
-      <GenerationProvider projectId={currentProject.id}>
-        <GenerateVoiceContent />
-      </GenerationProvider>
-    </SessionProvider>
+    <div className="h-full flex flex-col">
+      {showContent ? (
+        <SessionProvider>
+          <GenerationProvider projectId={currentProject.id}>
+            <GenerateVoiceContent />
+          </GenerationProvider>
+        </SessionProvider>
+      ) : (
+        <>
+          <header className="bg-white border-b border-gray-200 px-6 py-4">
+            <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+            <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
+          </header>
+
+          <div className="flex-1 flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-500">
+                {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
