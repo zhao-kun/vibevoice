@@ -61,6 +61,7 @@ export default function Navigation() {
 
   // Only show project-dependent content after client-side mount
   useEffect(() => {
+    console.log('[Navigation] Component mounted on client');
     setMounted(true);
   }, []);
 
@@ -127,6 +128,13 @@ export default function Navigation() {
     setShowProjectMenu(false);
     router.push("/");
   };
+
+  console.log('[Navigation] Rendering with:', {
+    mounted,
+    hasCurrentProject: !!currentProject,
+    projectsCount: projects.length,
+    hasRunningGeneration: !!runningGeneration
+  });
 
   return (
     <nav className="w-64 bg-gray-900 text-white flex flex-col h-screen fixed left-0 top-0 z-50">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/lib/ProjectContext";
 import { SpeakerRoleProvider } from "@/lib/SpeakerRoleContext";
@@ -9,27 +9,20 @@ import SpeakerRoleManager from "@/components/SpeakerRoleManager";
 export default function SpeakerRolePage() {
   const router = useRouter();
   const { currentProject, loading } = useProject();
-  const [mounted, setMounted] = useState(false);
-
-  // Only render after client-side mount to avoid SSR/SSG mismatch
-  useEffect(() => {
-    console.log('[SpeakerRole] Component mounted on client');
-    setMounted(true);
-  }, []);
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
-    console.log('[SpeakerRole] State check:', { mounted, loading, hasProject: !!currentProject });
-    if (mounted && !loading && !currentProject) {
+    console.log('[SpeakerRole] State check:', { loading, hasProject: !!currentProject });
+    if (!loading && !currentProject) {
       console.log('[SpeakerRole] Redirecting to home page');
       router.push('/');
     }
-  }, [mounted, loading, currentProject, router]);
+  }, [loading, currentProject, router]);
 
-  // Always render consistent wrapper to avoid hydration mismatch
-  const showContent = mounted && !loading && currentProject;
+  // Show content when project is available
+  const showContent = !loading && currentProject;
 
-  console.log('[SpeakerRole] Render decision:', { mounted, loading, hasProject: !!currentProject, showContent });
+  console.log('[SpeakerRole] Render decision:', { loading, hasProject: !!currentProject, showContent });
 
   return (
     <div className="h-full flex flex-col">
@@ -68,7 +61,7 @@ export default function SpeakerRolePage() {
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-500">
-                {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
+                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
               </p>
             </div>
           </div>

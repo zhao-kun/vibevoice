@@ -185,27 +185,20 @@ function VoiceEditorContent() {
 export default function VoiceEditorPage() {
   const router = useRouter();
   const { currentProject, loading } = useProject();
-  const [mounted, setMounted] = useState(false);
-
-  // Only render after client-side mount to avoid SSR/SSG mismatch
-  useEffect(() => {
-    console.log('[VoiceEditor] Component mounted on client');
-    setMounted(true);
-  }, []);
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
-    console.log('[VoiceEditor] State check:', { mounted, loading, hasProject: !!currentProject });
-    if (mounted && !loading && !currentProject) {
+    console.log('[VoiceEditor] State check:', { loading, hasProject: !!currentProject });
+    if (!loading && !currentProject) {
       console.log('[VoiceEditor] Redirecting to home page');
       router.push('/');
     }
-  }, [mounted, loading, currentProject, router]);
+  }, [loading, currentProject, router]);
 
-  // Always render consistent wrapper to avoid hydration mismatch
-  const showContent = mounted && !loading && currentProject;
+  // Show content when project is available
+  const showContent = !loading && currentProject;
 
-  console.log('[VoiceEditor] Render decision:', { mounted, loading, hasProject: !!currentProject, showContent });
+  console.log('[VoiceEditor] Render decision:', { loading, hasProject: !!currentProject, showContent });
 
   return (
     <div className="h-full flex flex-col">
@@ -224,7 +217,7 @@ export default function VoiceEditorPage() {
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-500">
-                {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
+                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
               </p>
             </div>
           </div>
