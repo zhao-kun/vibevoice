@@ -83,7 +83,26 @@ function GenerateVoiceContent() {
 }
 
 export default function GenerateVoicePage() {
-  const { currentProject } = useProject();
+  const { currentProject, loading } = useProject();
+
+  // Show loading state while projects are being loaded
+  if (loading) {
+    return (
+      <div className="h-full flex flex-col">
+        <header className="bg-white border-b border-gray-200 px-6 py-4">
+          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+          <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
+        </header>
+
+        <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-500">Loading project...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentProject) {
     return (
