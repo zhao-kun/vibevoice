@@ -183,8 +183,10 @@ function VoiceEditorContent() {
 }
 
 export default function VoiceEditorPage() {
+  console.log('[VoiceEditor] Component called');
   const router = useRouter();
   const { currentProject, loading } = useProject();
+  console.log('[VoiceEditor] Got context:', { loading, hasProject: !!currentProject });
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
