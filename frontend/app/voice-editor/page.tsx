@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import SpeakerSelector from "@/components/SpeakerSelector";
 import DialogEditor from "@/components/DialogEditor";
 import DialogPreview from "@/components/DialogPreview";
@@ -176,10 +177,24 @@ function VoiceEditorContent() {
 }
 
 export default function VoiceEditorPage() {
+  const router = useRouter();
   const { currentProject, loading } = useProject();
+  const [mounted, setMounted] = useState(false);
 
-  // Show loading state while projects are being loaded
-  if (loading) {
+  // Only render after client-side mount to avoid SSR/SSG mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Redirect to home page if no project is selected (after loading completes)
+  useEffect(() => {
+    if (mounted && !loading && !currentProject) {
+      router.push('/');
+    }
+  }, [mounted, loading, currentProject, router]);
+
+  // During SSR/SSG or before mount, show loading state
+  if (!mounted || loading) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
@@ -190,12 +205,13 @@ export default function VoiceEditorPage() {
     );
   }
 
+  // Show loading while redirecting
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">No Project Selected</h2>
-          <p className="text-gray-500">Please select a project to edit voice contents</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-500">Redirecting to project selection...</p>
         </div>
       </div>
     );

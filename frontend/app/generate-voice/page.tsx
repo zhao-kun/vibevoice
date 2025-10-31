@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { SessionProvider } from '@/lib/SessionContext';
 import { GenerationProvider, useGeneration } from '@/lib/GenerationContext';
@@ -83,10 +85,24 @@ function GenerateVoiceContent() {
 }
 
 export default function GenerateVoicePage() {
+  const router = useRouter();
   const { currentProject, loading } = useProject();
+  const [mounted, setMounted] = useState(false);
 
-  // Show loading state while projects are being loaded
-  if (loading) {
+  // Only render after client-side mount to avoid SSR/SSG mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Redirect to home page if no project is selected (after loading completes)
+  useEffect(() => {
+    if (mounted && !loading && !currentProject) {
+      router.push('/');
+    }
+  }, [mounted, loading, currentProject, router]);
+
+  // During SSR/SSG or before mount, show loading state
+  if (!mounted || loading) {
     return (
       <div className="h-full flex flex-col">
         <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -104,6 +120,7 @@ export default function GenerateVoicePage() {
     );
   }
 
+  // Show loading while redirecting
   if (!currentProject) {
     return (
       <div className="h-full flex flex-col">
@@ -114,7 +131,8 @@ export default function GenerateVoicePage() {
 
         <div className="flex-1 flex items-center justify-center bg-gray-50">
           <div className="text-center">
-            <p className="text-gray-500">Please select a project to start generating voices</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-500">Redirecting to project selection...</p>
           </div>
         </div>
       </div>

@@ -1,14 +1,30 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useProject } from "@/lib/ProjectContext";
 import { SpeakerRoleProvider } from "@/lib/SpeakerRoleContext";
 import SpeakerRoleManager from "@/components/SpeakerRoleManager";
 
 export default function SpeakerRolePage() {
+  const router = useRouter();
   const { currentProject, loading } = useProject();
+  const [mounted, setMounted] = useState(false);
 
-  // Show loading state while projects are being loaded
-  if (loading) {
+  // Only render after client-side mount to avoid SSR/SSG mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Redirect to home page if no project is selected (after loading completes)
+  useEffect(() => {
+    if (mounted && !loading && !currentProject) {
+      router.push('/');
+    }
+  }, [mounted, loading, currentProject, router]);
+
+  // During SSR/SSG or before mount, show loading state
+  if (!mounted || loading) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
@@ -19,12 +35,13 @@ export default function SpeakerRolePage() {
     );
   }
 
+  // Show loading while redirecting
   if (!currentProject) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">No Project Selected</h2>
-          <p className="text-gray-500">Please select a project to manage speaker roles</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-500">Redirecting to project selection...</p>
         </div>
       </div>
     );
