@@ -15,7 +15,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   // Load projects from backend on mount
   useEffect(() => {
-    console.log('[ProjectContext] Loading projects on mount');
+    console.log('[ProjectContext] Fucking loading projects on mount');
     loadProjects();
   }, []);
 
