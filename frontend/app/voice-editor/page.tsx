@@ -196,20 +196,22 @@ export default function VoiceEditorPage() {
   // Always render consistent wrapper to avoid hydration mismatch
   const showContent = mounted && !loading && currentProject;
 
-  return (
-    <div className="h-full flex items-center justify-center">
-      {showContent ? (
-        <SpeakerRoleProvider projectId={currentProject.id}>
-          <VoiceEditorContent />
-        </SpeakerRoleProvider>
-      ) : (
+  if (!showContent) {
+    return (
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-500">
             {!mounted || loading ? 'Loading project...' : 'Redirecting to project selection...'}
           </p>
         </div>
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <SpeakerRoleProvider projectId={currentProject.id}>
+      <VoiceEditorContent />
+    </SpeakerRoleProvider>
   );
 }
