@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useProject } from "@/lib/ProjectContext";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
 export default function ProjectSelector() {
   const { projects, selectProject, createProject, deleteProject } = useProject();
+  const { t, locale, setLocale } = useLanguage();
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -27,30 +29,56 @@ export default function ProjectSelector() {
         // Will automatically navigate via the context update
         setTimeout(() => router.push("/speaker-role"), 100);
       } catch {
-        toast.error("Failed to create project. Please try again.");
+        toast.error(t('project.createError'));
       }
     }
   };
 
   const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this project?")) {
+    if (confirm(t('project.deleteConfirm'))) {
       try {
         await deleteProject(projectId);
       } catch {
-        toast.error("Failed to delete project. Please try again.");
+        toast.error(t('project.deleteError'));
       }
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-8 relative">
+      {/* Language Switcher - Top Right */}
+      <div className="absolute top-6 right-6">
+        <div className="flex items-center gap-2 bg-white rounded-lg shadow-md p-1">
+          <button
+            onClick={() => setLocale('en')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              locale === 'en'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {t('language.en')}
+          </button>
+          <button
+            onClick={() => setLocale('zh')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+              locale === 'zh'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {t('language.zh')}
+          </button>
+        </div>
+      </div>
+
       <div className="max-w-6xl w-full">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">VibeVoice</h1>
-          <p className="text-xl text-gray-600">Speech Generation Studio</p>
-          <p className="text-sm text-gray-500 mt-2">Select a project to get started</p>
+          <h1 className="text-5xl font-bold text-gray-900 mb-4">{t('app.title')}</h1>
+          <p className="text-xl text-gray-600">{t('app.subtitle')}</p>
+          <p className="text-sm text-gray-500 mt-2">{t('project.selectProject')}</p>
         </div>
 
         {/* Projects Grid */}
@@ -79,7 +107,7 @@ export default function ProjectSelector() {
 
               <h3 className="text-xl font-semibold text-gray-900 mb-2">{project.name}</h3>
               <p className="text-sm text-gray-600 mb-4 line-clamp-2">
-                {project.description || "No description"}
+                {project.description || t('project.noDescription')}
               </p>
 
               <div className="flex items-center text-xs text-gray-500 space-x-4">
@@ -87,7 +115,7 @@ export default function ProjectSelector() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
+                  <span>{t('project.updated')} {new Date(project.updatedAt).toLocaleDateString()}</span>
                 </div>
               </div>
             </div>
@@ -103,8 +131,8 @@ export default function ProjectSelector() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </div>
-            <h3 className="text-xl font-semibold mb-2">Create New Project</h3>
-            <p className="text-sm text-white/80">Start a new voice generation project</p>
+            <h3 className="text-xl font-semibold mb-2">{t('project.createNew')}</h3>
+            <p className="text-sm text-white/80">{t('project.selectProject')}</p>
           </div>
         </div>
 
@@ -112,18 +140,18 @@ export default function ProjectSelector() {
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Create New Project</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">{t('project.createNew')}</h2>
 
               <div className="space-y-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Project Name *
+                    {t('project.projectName')} *
                   </label>
                   <input
                     type="text"
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
-                    placeholder="Enter project name"
+                    placeholder={t('project.enterProjectName')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autoFocus
                   />
@@ -131,12 +159,12 @@ export default function ProjectSelector() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description
+                    {t('project.projectDescription')}
                   </label>
                   <textarea
                     value={newProjectDescription}
                     onChange={(e) => setNewProjectDescription(e.target.value)}
-                    placeholder="Enter project description (optional)"
+                    placeholder={t('project.enterProjectDescription')}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                     rows={3}
                   />
@@ -152,14 +180,14 @@ export default function ProjectSelector() {
                   }}
                   className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleCreateProject}
                   disabled={!newProjectName.trim()}
                   className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Project
+                  {t('project.createProject')}
                 </button>
               </div>
             </div>

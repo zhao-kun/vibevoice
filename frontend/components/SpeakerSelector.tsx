@@ -1,6 +1,7 @@
 "use client";
 
 import { SpeakerInfo } from "@/types/dialog";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface SpeakerSelectorProps {
   speakers: SpeakerInfo[];
@@ -13,11 +14,13 @@ export default function SpeakerSelector({
   selectedSpeakerId,
   onSelectSpeaker,
 }: SpeakerSelectorProps) {
+  const { t } = useLanguage();
+
   return (
     <div className="h-full flex flex-col bg-gray-50 border-r border-gray-200">
       <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">Speakers</h2>
-        <p className="text-xs text-gray-500 mt-1">Select speaker for new dialog line</p>
+        <h2 className="text-lg font-semibold text-gray-800">{t('voiceEditor.speakers')}</h2>
+        <p className="text-xs text-gray-500 mt-1">{t('voiceEditor.selectSpeakerHint')}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
@@ -54,9 +57,9 @@ export default function SpeakerSelector({
 
       <div className="p-4 border-t border-gray-200 bg-white">
         <div className="text-xs text-gray-500">
-          <p className="font-medium mb-1">Quick Actions:</p>
-          <p>• Click speaker to add dialog line</p>
-          <p>• Edit text in center panel</p>
+          <p className="font-medium mb-1">{t('voiceEditor.quickActions')}</p>
+          <p>• {t('voiceEditor.clickSpeakerToAdd')}</p>
+          <p>• {t('voiceEditor.editInCenter')}</p>
         </div>
       </div>
     </div>

@@ -3,21 +3,22 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useProject } from "@/lib/ProjectContext";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import type { Generation } from "@/types/generation";
 
 interface MenuItem {
   id: string;
-  label: string;
+  labelKey: string;
   path: string;
   icon: React.ReactNode;
 }
 
-const menuItems: MenuItem[] = [
+const getMenuItems = (): MenuItem[] => [
   {
     id: "speaker-role",
-    label: "Create Speaker Role",
+    labelKey: "navigation.speakerRole",
     path: "/speaker-role",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -27,7 +28,7 @@ const menuItems: MenuItem[] = [
   },
   {
     id: "voice-editor",
-    label: "Voice Contents Editor",
+    labelKey: "navigation.voiceEditor",
     path: "/voice-editor",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -37,7 +38,7 @@ const menuItems: MenuItem[] = [
   },
   {
     id: "generate-voice",
-    label: "Generate Voice",
+    labelKey: "navigation.generateVoice",
     path: "/generate-voice",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -51,9 +52,11 @@ export default function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const { currentProject, projects, selectProject } = useProject();
+  const { t, locale, setLocale } = useLanguage();
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [mounted, setMounted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const menuItems = getMenuItems();
 
   // Task monitoring state
   const [runningGeneration, setRunningGeneration] = useState<Generation | null>(null);
@@ -132,13 +135,13 @@ export default function Navigation() {
     <nav className="w-64 bg-gray-900 text-white flex flex-col h-screen fixed left-0 top-0 z-50">
       {/* Logo/Header */}
       <div className="p-6 border-b border-gray-800">
-        <h1 className="text-xl font-bold text-white">VibeVoice</h1>
-        <p className="text-xs text-gray-400 mt-1">Speech Generation Studio</p>
+        <h1 className="text-xl font-bold text-white">{t('app.title')}</h1>
+        <p className="text-xs text-gray-400 mt-1">{t('app.subtitle')}</p>
       </div>
 
       {/* Current Project Display */}
       <div className="px-4 py-3 border-b border-gray-800 bg-gray-800/50 relative z-50">
-        <div className="text-xs text-gray-400 mb-1">Current Project</div>
+        <div className="text-xs text-gray-400 mb-1">{t('navigation.currentProject')}</div>
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setShowProjectMenu(!showProjectMenu)}
@@ -149,7 +152,7 @@ export default function Navigation() {
                 {mounted && currentProject ? currentProject.name.charAt(0).toUpperCase() : '?'}
               </div>
               <span className="text-sm font-medium text-white truncate">
-                {mounted && currentProject ? currentProject.name : "Loading..."}
+                {mounted && currentProject ? currentProject.name : t('common.loading')}
               </span>
             </div>
             <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,7 +192,7 @@ export default function Navigation() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span className="text-sm font-medium">New Project</span>
+                  <span className="text-sm font-medium">{t('navigation.newProject')}</span>
                 </button>
               </div>
             </div>
@@ -224,19 +227,43 @@ export default function Navigation() {
               <div className={isActive ? "text-white" : "text-gray-400"}>
                 {item.icon}
               </div>
-              <span className="font-medium text-sm">{item.label}</span>
+              <span className="font-medium text-sm">{t(item.labelKey)}</span>
             </Link>
           );
         })}
       </div>
 
       {/* Footer */}
-      <div className="p-6 border-t border-gray-800">
+      <div className="p-6 border-t border-gray-800 space-y-4">
+        {/* Language Switcher */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setLocale('en')}
+            className={`flex-1 px-3 py-1.5 text-xs rounded-lg transition-all ${
+              locale === 'en'
+                ? 'bg-blue-600 text-white font-medium'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
+            }`}
+          >
+            {t('language.en')}
+          </button>
+          <button
+            onClick={() => setLocale('zh')}
+            className={`flex-1 px-3 py-1.5 text-xs rounded-lg transition-all ${
+              locale === 'zh'
+                ? 'bg-blue-600 text-white font-medium'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-300'
+            }`}
+          >
+            {t('language.zh')}
+          </button>
+        </div>
+
         <div className="flex items-center justify-between gap-3">
           {/* Version Info */}
           <div className="text-xs text-gray-500 flex-1">
-            <p>Version 1.0.0</p>
-            <p className="mt-1">© 2025 VibeVoice</p>
+            <p>{t('app.version')}</p>
+            <p className="mt-1">{t('app.copyright')}</p>
           </div>
 
           {/* Task Status Icon */}
@@ -248,7 +275,7 @@ export default function Navigation() {
                 ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
                 : 'bg-gray-800 text-gray-600 cursor-not-allowed'
             }`}
-            title={runningGeneration ? 'View running generation task' : 'No running tasks'}
+            title={runningGeneration ? t('navigation.viewRunningTask') : t('navigation.noRunningTasks')}
           >
             {/* Task/Activity Icon */}
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

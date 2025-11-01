@@ -85,11 +85,12 @@ def create_app(config_name=None):
 def register_error_handlers(app):
     """Register error handlers for the application"""
     from flask import request
+    from backend.i18n import t
 
     @app.errorhandler(400)
     def bad_request(error):
         return jsonify({
-            'error': 'Bad Request',
+            'error': t('errors.bad_request'),
             'message': str(error)
         }), 400
 
@@ -98,8 +99,8 @@ def register_error_handlers(app):
         # If it's an API request, return JSON 404
         if request.path.startswith('/api/'):
             return jsonify({
-                'error': 'Not Found',
-                'message': 'The requested resource was not found'
+                'error': t('errors.not_found'),
+                'message': t('errors.resource_not_found')
             }), 404
         # Otherwise, let the SPA handle it (this shouldn't happen with catch-all route)
         # But just in case, try to serve index.html
@@ -109,22 +110,23 @@ def register_error_handlers(app):
             return send_from_directory(static_folder, 'index.html')
         except Exception:
             return jsonify({
-                'error': 'Not Found',
-                'message': 'The requested resource was not found'
+                'error': t('errors.not_found'),
+                'message': t('errors.resource_not_found')
             }), 404
 
     @app.errorhandler(500)
     def internal_error(error):
         return jsonify({
-            'error': 'Internal Server Error',
-            'message': 'An unexpected error occurred'
+            'error': t('errors.internal_error'),
+            'message': t('errors.unexpected_error')
         }), 500
 
     @app.errorhandler(413)
     def request_entity_too_large(error):
+        max_size = app.config["MAX_CONTENT_LENGTH"] / (1024 * 1024)
         return jsonify({
-            'error': 'File Too Large',
-            'message': f'Maximum file size is {app.config["MAX_CONTENT_LENGTH"] / (1024 * 1024)}MB'
+            'error': t('errors.file_too_large'),
+            'message': t('errors.max_file_size', size=max_size)
         }), 413
 
 

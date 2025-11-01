@@ -5,6 +5,7 @@ from flask import request, jsonify, current_app, send_file
 from backend.api import api_bp
 from backend.services.speaker_service import SpeakerService
 from backend.services.project_service import ProjectService
+from backend.i18n import t
 
 
 def get_speaker_service(project_id: str) -> SpeakerService:
@@ -39,8 +40,8 @@ def list_speakers(project_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         speakers = service.list_speakers()
@@ -52,7 +53,7 @@ def list_speakers(project_id):
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to list speakers',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -73,22 +74,22 @@ def get_speaker(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         speaker = service.get_speaker(speaker_id)
         if not speaker:
             return jsonify({
-                'error': 'Speaker not found',
-                'message': f'Speaker with ID "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return jsonify(speaker.to_dict()), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to get speaker',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -113,8 +114,8 @@ def add_speaker(project_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get form data
@@ -124,14 +125,14 @@ def add_speaker(project_id):
 
         if not name:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'Speaker name is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.validation_error')
             }), 400
 
         if not voice_file:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'Voice file is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.file_upload_error')
             }), 400
 
         speaker = service.add_speaker(name, description, voice_file)
@@ -140,12 +141,12 @@ def add_speaker(project_id):
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to add speaker',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -172,14 +173,14 @@ def update_speaker(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         data = request.get_json()
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
@@ -189,15 +190,15 @@ def update_speaker(project_id, speaker_id):
         speaker = service.update_speaker(speaker_id, name, description)
         if not speaker:
             return jsonify({
-                'error': 'Speaker not found',
-                'message': f'Speaker with ID "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return jsonify(speaker.to_dict()), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to update speaker',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -218,25 +219,25 @@ def delete_speaker(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         success = service.delete_speaker(speaker_id)
         if not success:
             return jsonify({
-                'error': 'Speaker not found',
-                'message': f'Speaker with ID "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return jsonify({
-            'message': 'Speaker deleted successfully. Speaker IDs have been reindexed.',
+            'message': t('success.speaker_deleted'),
             'speaker_id': speaker_id
         }), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to delete speaker',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -257,22 +258,22 @@ def download_voice_file(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         voice_file_path = service.get_voice_file_path(speaker_id)
         if not voice_file_path or not voice_file_path.exists():
             return jsonify({
-                'error': 'Voice file not found',
-                'message': f'Voice file for speaker "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return send_file(voice_file_path, as_attachment=True)
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to download voice file',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -296,34 +297,34 @@ def update_voice_file(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         voice_file = request.files.get('voice_file')
         if not voice_file:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'Voice file is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.file_upload_error')
             }), 400
 
         speaker = service.update_voice_file(speaker_id, voice_file)
         if not speaker:
             return jsonify({
-                'error': 'Speaker not found',
-                'message': f'Speaker with ID "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return jsonify(speaker.to_dict()), 200
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to update voice file',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -348,14 +349,14 @@ def trim_voice_file(project_id, speaker_id):
         service = get_speaker_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         data = request.get_json()
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'JSON body is required'
             }), 400
 
@@ -364,32 +365,32 @@ def trim_voice_file(project_id, speaker_id):
 
         if start_time is None or end_time is None:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'start_time and end_time are required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.validation_error')
             }), 400
 
         if start_time < 0 or end_time <= start_time:
             return jsonify({
-                'error': 'Validation Error',
+                'error': t('errors.validation_error'),
                 'message': 'Invalid time range: end_time must be greater than start_time and both must be non-negative'
             }), 400
 
         speaker = service.trim_voice_file(speaker_id, start_time, end_time)
         if not speaker:
             return jsonify({
-                'error': 'Speaker not found',
-                'message': f'Speaker with ID "{speaker_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.speaker_not_found')
             }), 404
 
         return jsonify(speaker.to_dict()), 200
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to trim voice file',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500

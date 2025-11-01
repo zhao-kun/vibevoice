@@ -10,12 +10,14 @@ import { DialogLine, SpeakerInfo } from "@/types/dialog";
 import { useProject } from "@/lib/ProjectContext";
 import { useSession } from "@/lib/SessionContext";
 import { SpeakerRoleProvider, useSpeakerRole } from "@/lib/SpeakerRoleContext";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import toast from "react-hot-toast";
 
 function VoiceEditorContent() {
   const { currentProject } = useProject();
   const { currentSession, updateSessionDialogs } = useSession();
   const { speakerRoles } = useSpeakerRole();
+  const { t } = useLanguage();
   const [dialogLines, setDialogLines] = useState<DialogLine[]>([]);
   const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -107,7 +109,7 @@ function VoiceEditorContent() {
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Failed to save dialog:', error);
-      toast.error('Failed to save changes. Please try again.');
+      toast.error(t('session.saveError'));
     } finally {
       setIsSaving(false);
     }
@@ -118,7 +120,7 @@ function VoiceEditorContent() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center space-x-2 mb-1">
-          <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('voiceEditor.pageTitle')}</h1>
           {currentProject && (
             <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
               {currentProject.name}
@@ -131,7 +133,7 @@ function VoiceEditorContent() {
           )}
         </div>
         <p className="text-sm text-gray-500">
-          Create and edit dialog sequences for multi-speaker text-to-speech
+          {t('voiceEditor.pageSubtitle')}
         </p>
       </header>
 
@@ -179,6 +181,7 @@ function VoiceEditorContent() {
 export default function VoiceEditorPage() {
   const router = useRouter();
   const { currentProject, loading } = useProject();
+  const { t } = useLanguage();
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
@@ -199,15 +202,15 @@ export default function VoiceEditorPage() {
       ) : (
         <>
           <header className="bg-white border-b border-gray-200 px-6 py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Voice Contents Editor</h1>
-            <p className="text-sm text-gray-500 mt-1">Create and edit dialog sequences for multi-speaker text-to-speech</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('voiceEditor.pageTitle')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('voiceEditor.pageSubtitle')}</p>
           </header>
 
           <div className="flex-1 flex items-center justify-center bg-gray-50">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-500">
-                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
+                {loading ? t('voiceEditor.loadingProject') : t('voiceEditor.redirecting')}
               </p>
             </div>
           </div>

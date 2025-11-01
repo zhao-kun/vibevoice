@@ -5,6 +5,7 @@ import re
 from flask import request, jsonify, current_app
 from backend.api import api_bp
 from backend.services.project_service import ProjectService
+from backend.i18n import t
 
 
 def get_project_service() -> ProjectService:
@@ -29,21 +30,21 @@ def validate_project_name(name: str) -> tuple[bool, str]:
         Tuple of (is_valid, error_message)
     """
     if not name:
-        return False, "Project name cannot be empty"
+        return False, t('errors.project_name_required')
 
     # Check if name starts or ends with space
     if name.startswith(' ') or name.endswith(' '):
-        return False, "Project name cannot start or end with spaces"
+        return False, t('errors.project_name_invalid_chars')
 
     # Check if first character is an alphabet
     if not name[0].isalpha():
-        return False, "Project name must start with an alphabet character"
+        return False, t('errors.invalid_project_name')
 
     # Check if all characters are valid (alphabet, number, _, -, or space)
     # Pattern: starts with letter, followed by any combination of letters, numbers, _, -, or spaces
     pattern = r'^[a-zA-Z][a-zA-Z0-9_\- ]*$'
     if not re.match(pattern, name):
-        return False, "Project name can only contain letters, numbers, underscores, hyphens, and spaces"
+        return False, t('errors.project_name_invalid_chars')
 
     return True, ""
 
@@ -67,7 +68,7 @@ def list_projects():
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to list projects',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -89,15 +90,15 @@ def get_project(project_id):
 
         if not project:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         return jsonify(project.to_dict()), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to get project',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -121,22 +122,22 @@ def create_project():
 
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
         name = data.get('name')
         if not name:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'Project name is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.project_name_required')
             }), 400
 
         # Validate project name
         is_valid, error_message = validate_project_name(name)
         if not is_valid:
             return jsonify({
-                'error': 'Validation Error',
+                'error': t('errors.validation_error'),
                 'message': error_message
             }), 400
 
@@ -149,12 +150,12 @@ def create_project():
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to create project',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -181,7 +182,7 @@ def update_project(project_id):
 
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
@@ -193,7 +194,7 @@ def update_project(project_id):
             is_valid, error_message = validate_project_name(name)
             if not is_valid:
                 return jsonify({
-                    'error': 'Validation Error',
+                    'error': t('errors.validation_error'),
                     'message': error_message
                 }), 400
 
@@ -202,20 +203,20 @@ def update_project(project_id):
 
         if not project:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         return jsonify(project.to_dict()), 200
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to update project',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -237,17 +238,17 @@ def delete_project(project_id):
 
         if not success:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         return jsonify({
-            'message': 'Project deleted successfully',
+            'message': t('success.project_deleted'),
             'project_id': project_id
         }), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to delete project',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500

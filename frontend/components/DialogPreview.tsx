@@ -2,6 +2,7 @@
 
 import { DialogLine, SpeakerInfo } from "@/types/dialog";
 import { useRef } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface DialogPreviewProps {
   dialogLines: DialogLine[];
@@ -9,6 +10,7 @@ interface DialogPreviewProps {
 }
 
 export default function DialogPreview({ dialogLines, speakers }: DialogPreviewProps) {
+  const { t } = useLanguage();
   const previewRef = useRef<HTMLPreElement>(null);
 
   const getSpeakerById = (speakerId: string) => {
@@ -45,9 +47,9 @@ export default function DialogPreview({ dialogLines, speakers }: DialogPreviewPr
   return (
     <div className="h-full flex flex-col bg-gray-50 border-l border-gray-200">
       <div className="p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">Preview</h2>
+        <h2 className="text-lg font-semibold text-gray-800">{t('voiceEditor.preview')}</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Output format for VibeVoice
+          {t('voiceEditor.previewSubtitle')}
         </p>
       </div>
 
@@ -58,7 +60,7 @@ export default function DialogPreview({ dialogLines, speakers }: DialogPreviewPr
               <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-lg">No content to preview</p>
+              <p className="text-lg">{t('voiceEditor.noContentPreview')}</p>
             </div>
           </div>
         ) : (
@@ -82,7 +84,7 @@ export default function DialogPreview({ dialogLines, speakers }: DialogPreviewPr
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
-            <span>Copy to Clipboard</span>
+            <span>{t('voiceEditor.copyToClipboard')}</span>
           </button>
 
           <button
@@ -92,14 +94,14 @@ export default function DialogPreview({ dialogLines, speakers }: DialogPreviewPr
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            <span>Download as TXT</span>
+            <span>{t('voiceEditor.downloadAsTxt')}</span>
           </button>
 
           <div className="text-xs text-gray-500 pt-2">
-            <p className="font-medium mb-1">Format:</p>
-            <p>• Speaker Name: Dialog content</p>
-            <p>• Empty line between dialogs</p>
-            <p>• Ready for VibeVoice processing</p>
+            <p className="font-medium mb-1">{t('voiceEditor.formatLabel')}</p>
+            <p>• {t('voiceEditor.formatLine1')}</p>
+            <p>• {t('voiceEditor.formatLine2')}</p>
+            <p>• {t('voiceEditor.formatLine3')}</p>
           </div>
         </div>
       )}

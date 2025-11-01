@@ -10,6 +10,7 @@ from backend.services.dialog_session_service import DialogSessionService
 from backend.services.speaker_service import SpeakerService
 from backend.services.project_service import ProjectService
 from backend.gen_voice.task import gm
+from backend.i18n import t
 from transformers.utils import logging
 
 logging.set_verbosity_info()
@@ -74,15 +75,15 @@ def get_voice_generation_service(project_id: str):
 
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
         dialog_session_id = data.get('dialog_session_id')
         if dialog_session_id is None:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'dialog_session_id is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.session_required')
             }), 400
 
         request_id = uuid4().hex
@@ -97,7 +98,7 @@ def get_voice_generation_service(project_id: str):
             validated_offloading = _validate_offloading_config(offloading_config)
         except ValueError as e:
             return jsonify({
-                'error': 'Invalid offloading configuration',
+                'error': t('errors.validation_error'),
                 'message': str(e)
             }), 400
 
@@ -109,8 +110,8 @@ def get_voice_generation_service(project_id: str):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -129,18 +130,18 @@ def get_voice_generation_service(project_id: str):
                                                     offloading_config=validated_offloading)
         if not generation:
             return jsonify({
-                'error': 'Generation Failed',
-                'message': 'Failed to start voice generation due to existing active generation'
+                'error': t('errors.internal_error'),
+                'message': t('errors.generation_already_running')
             }), 500
         return jsonify({
-            'message': 'Voice generation started successfully',
+            'message': t('success.generation_started'),
             'request_id': generation.request_id,
             'generation': generation.to_dict()
         }), 200
     except Exception as e:
         logger.error(f"Error occurred while starting voice generation: {e}")
         return jsonify({
-            'error': 'Failed to start voice generation',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -185,8 +186,8 @@ def get_all_generations(project_id):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -205,7 +206,7 @@ def get_all_generations(project_id):
     except Exception as e:
         logger.error(f"Error occurred while retrieving generations: {e}")
         return jsonify({
-            'error': 'Failed to retrieve generations',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -232,8 +233,8 @@ def download_generation_audio(project_id: str, request_id: str):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -246,15 +247,15 @@ def download_generation_audio(project_id: str, request_id: str):
         generation = next((g for g in generations if g.request_id == request_id), None)
         if not generation:
             return jsonify({
-                'error': 'Generation not found',
-                'message': f'Generation with request ID "{request_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.generation_not_found')
             }), 400
 
         audio_file_path = project_path / 'output' / generation.output_filename
         if not audio_file_path.exists():
             return jsonify({
-                'error': 'Audio file not found',
-                'message': f'Generated audio file for request ID "{request_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.generation_not_found')
             }), 400
 
         # Check if download parameter is set to true
@@ -271,7 +272,7 @@ def download_generation_audio(project_id: str, request_id: str):
     except Exception as e:
         logger.error(f"Error occurred while downloading generated audio: {e}")
         return jsonify({
-            'error': 'Failed to download generated audio',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -295,8 +296,8 @@ def get_generation(project_id: str, request_id: str):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -310,8 +311,8 @@ def get_generation(project_id: str, request_id: str):
 
         if not generation:
             return jsonify({
-                'error': 'Generation not found',
-                'message': f'Generation with request ID "{request_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.generation_not_found')
             }), 404
 
         return jsonify({
@@ -321,7 +322,7 @@ def get_generation(project_id: str, request_id: str):
     except Exception as e:
         logger.error(f"Error occurred while retrieving generation: {e}")
         return jsonify({
-            'error': 'Failed to retrieve generation',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -345,8 +346,8 @@ def delete_generation(project_id: str, request_id: str):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -358,19 +359,19 @@ def delete_generation(project_id: str, request_id: str):
         success = service.delete_generation(request_id)
         if not success:
             return jsonify({
-                'error': 'Generation not found',
-                'message': f'Generation with request ID "{request_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.generation_not_found')
             }), 404
 
         return jsonify({
-            'message': 'Generation deleted successfully',
+            'message': t('success.generation_deleted'),
             'request_id': request_id
         }), 200
 
     except Exception as e:
         logger.error(f"Error occurred while deleting generation: {e}")
         return jsonify({
-            'error': 'Failed to delete generation',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -393,15 +394,15 @@ def batch_delete_generations(project_id: str):
         data = request.get_json()
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
         request_ids = data.get('request_ids', [])
         if not request_ids or not isinstance(request_ids, list):
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'request_ids must be a non-empty array'
+                'error': t('errors.bad_request'),
+                'message': t('errors.validation_error')
             }), 400
 
         # Get project service to find project directory
@@ -412,8 +413,8 @@ def batch_delete_generations(project_id: str):
         project_path = project_service.get_project_path(project_id)
         if not project_path:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         # Get speaker service for validation
@@ -425,7 +426,7 @@ def batch_delete_generations(project_id: str):
         result = service.delete_generations_batch(request_ids)
 
         return jsonify({
-            'message': f'Batch delete completed: {result["deleted_count"]} deleted, {result["failed_count"]} failed',
+            'message': t('success.generations_deleted'),
             'deleted_count': result['deleted_count'],
             'failed_count': result['failed_count'],
             'deleted_ids': result['deleted_ids'],
@@ -435,6 +436,6 @@ def batch_delete_generations(project_id: str):
     except Exception as e:
         logger.error(f"Error occurred while batch deleting generations: {e}")
         return jsonify({
-            'error': 'Failed to batch delete generations',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500

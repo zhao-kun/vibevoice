@@ -1,0 +1,55 @@
+{
+  "errors": {
+    "bad_request": "Bad Request",
+    "not_found": "Not Found",
+    "resource_not_found": "The requested resource was not found",
+    "internal_error": "Internal Server Error",
+    "unexpected_error": "An unexpected error occurred",
+    "file_too_large": "File Too Large",
+    "max_file_size": "Maximum file size is {size}MB",
+    "validation_error": "Validation error",
+    "project_not_found": "Project not found",
+    "speaker_not_found": "Speaker not found",
+    "session_not_found": "Session not found",
+    "generation_not_found": "Generation not found",
+    "invalid_project_name": "Invalid project name",
+    "project_name_required": "Project name is required",
+    "project_name_too_long": "Project name must be at most 100 characters",
+    "project_name_invalid_chars": "Project name can only contain letters, numbers, spaces, hyphens, and underscores",
+    "dialog_format_error": "Dialog format error",
+    "invalid_speaker_format": "Invalid speaker format in line {line}",
+    "no_content_after_speaker": "No content after speaker name in line {line}",
+    "file_upload_error": "File upload error",
+    "invalid_file_type": "Invalid file type. Supported formats: {formats}",
+    "generation_already_running": "A generation task is already running",
+    "no_speakers_found": "No speakers found in project",
+    "session_required": "Session is required"
+  },
+  "success": {
+    "project_created": "Project created successfully",
+    "project_updated": "Project updated successfully",
+    "project_deleted": "Project deleted successfully",
+    "speaker_created": "Speaker created successfully",
+    "speaker_updated": "Speaker updated successfully",
+    "speaker_deleted": "Speaker deleted successfully",
+    "voice_uploaded": "Voice uploaded successfully",
+    "session_created": "Session created successfully",
+    "session_updated": "Session updated successfully",
+    "session_deleted": "Session deleted successfully",
+    "generation_started": "Generation started successfully",
+    "generation_deleted": "Generation deleted successfully",
+    "generations_deleted": "Generations deleted successfully"
+  },
+  "status": {
+    "healthy": "Service is healthy",
+    "pending": "Pending",
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed"
+  },
+  "validation": {
+    "required_field": "{field} is required",
+    "invalid_format": "Invalid {field} format",
+    "out_of_range": "{field} must be between {min} and {max}"
+  }
+}

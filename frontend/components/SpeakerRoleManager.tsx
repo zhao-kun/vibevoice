@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useSpeakerRole } from "@/lib/SpeakerRoleContext";
 import { useProject } from "@/lib/ProjectContext";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { api } from "@/lib/api";
 import AudioUploader from "./AudioUploader";
 import AudioPlayer from "./AudioPlayer";
@@ -11,6 +12,7 @@ import toast from "react-hot-toast";
 
 export default function SpeakerRoleManager() {
   const { currentProject } = useProject();
+  const { t } = useLanguage();
   const {
     speakerRoles,
     addSpeakerRole,
@@ -55,7 +57,7 @@ export default function SpeakerRoleManager() {
 
   const handleDeleteClick = (speakerId: string) => {
     if (speakerRoles.length === 1) {
-      toast.error("Cannot delete the last speaker role. At least one speaker is required.");
+      toast.error(t('speaker.deleteError'));
       return;
     }
 
@@ -69,10 +71,10 @@ export default function SpeakerRoleManager() {
     setLocalError(null);
     try {
       await deleteSpeakerRole(deleteTargetId);
-      toast.success("Speaker deleted successfully");
+      toast.success(t('speaker.deleteSuccess'));
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Failed to delete speaker");
-      toast.error(err instanceof Error ? err.message : "Failed to delete speaker");
+      setLocalError(err instanceof Error ? err.message : t('speaker.deleteError'));
+      toast.error(err instanceof Error ? err.message : t('speaker.deleteError'));
     } finally {
       setShowDeleteDialog(false);
       setDeleteTargetId(null);
@@ -88,10 +90,10 @@ export default function SpeakerRoleManager() {
     setLocalError(null);
     try {
       await uploadVoiceFile(speakerId, file);
-      toast.success("Voice file uploaded successfully");
+      toast.success(t('speaker.uploadSuccess'));
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Failed to upload voice file");
-      toast.error(err instanceof Error ? err.message : "Failed to upload voice file");
+      setLocalError(err instanceof Error ? err.message : t('speaker.uploadError'));
+      toast.error(err instanceof Error ? err.message : t('speaker.uploadError'));
     }
   };
 
@@ -99,10 +101,10 @@ export default function SpeakerRoleManager() {
     setLocalError(null);
     try {
       await trimAudio(speakerId, startTime, endTime);
-      toast.success("Voice trimmed successfully");
+      toast.success(t('speaker.updateSuccess'));
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Failed to trim audio");
-      toast.error(err instanceof Error ? err.message : "Failed to trim audio");
+      setLocalError(err instanceof Error ? err.message : t('speaker.updateError'));
+      toast.error(err instanceof Error ? err.message : t('speaker.updateError'));
     }
   };
 
@@ -110,10 +112,10 @@ export default function SpeakerRoleManager() {
     setLocalError(null);
     try {
       await removeVoiceFile(speakerId);
-      toast.success("Voice removed successfully");
+      toast.success(t('speaker.deleteSuccess'));
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Failed to remove voice");
-      toast.error(err instanceof Error ? err.message : "Failed to remove voice");
+      setLocalError(err instanceof Error ? err.message : t('speaker.deleteError'));
+      toast.error(err instanceof Error ? err.message : t('speaker.deleteError'));
     }
   };
 
@@ -139,9 +141,9 @@ export default function SpeakerRoleManager() {
 
     try {
       await updateSpeakerRole(speakerId, { description: localDesc });
-      toast.success(`${speakerId} saved successfully`);
+      toast.success(t('speaker.updateSuccess'));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to save changes";
+      const errorMessage = err instanceof Error ? err.message : t('speaker.updateError');
       setLocalError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -164,14 +166,14 @@ export default function SpeakerRoleManager() {
       <div className="flex-shrink-0 border-b border-gray-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">
-            Speaker IDs are automatically assigned. Upload audio samples for each speaker.
+            {t('speaker.title')}
           </p>
           <button
             onClick={handleAddSpeaker}
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Adding..." : "+ Add Speaker"}
+            {loading ? t('common.loading') : t('speaker.addSpeaker')}
           </button>
         </div>
       </div>
@@ -194,7 +196,7 @@ export default function SpeakerRoleManager() {
                     <h3 className="text-lg font-semibold text-gray-900">
                       {role.speakerId}
                     </h3>
-                    <p className="text-xs text-gray-500">Auto-assigned ID</p>
+                    <p className="text-xs text-gray-500">{t('speaker.speakerName')}</p>
                   </div>
                 </div>
                 <button
@@ -205,24 +207,21 @@ export default function SpeakerRoleManager() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
 
               {/* Description */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
-                  <span className="text-gray-500 font-normal ml-1">
-                    (help identify this voice)
-                  </span>
+                  {t('speaker.speakerDescription')}
                 </label>
                 <textarea
                   value={localDescriptions[role.speakerId] || ""}
                   onChange={(e) =>
                     handleUpdateDescription(role.speakerId, e.target.value)
                   }
-                  placeholder="e.g., Deep male voice, professional tone..."
+                  placeholder={t('project.enterProjectDescription')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={2}
                   disabled={loading || savingStates[role.speakerId]}
@@ -241,18 +240,17 @@ export default function SpeakerRoleManager() {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          Saving...
+                          {t('common.loading')}
                         </>
                       ) : (
                         <>
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
-                          Save Changes
+                          {t('common.save')}
                         </>
                       )}
                     </button>
-                    <span className="text-xs text-orange-600">Unsaved changes</span>
                   </div>
                 )}
               </div>
@@ -260,7 +258,7 @@ export default function SpeakerRoleManager() {
               {/* Voice File */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Voice Sample
+                  {t('speaker.voiceFile')}
                 </label>
                 {role.voiceFilename && currentProject ? (
                   <AudioPlayer
@@ -287,7 +285,7 @@ export default function SpeakerRoleManager() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                           </svg>
-                          Upload File
+                          {t('common.upload')}
                         </div>
                       </button>
                       <button
@@ -302,7 +300,7 @@ export default function SpeakerRoleManager() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                           </svg>
-                          Record Voice
+                          {t('speaker.uploadVoice')}
                         </div>
                       </button>
                     </div>
@@ -325,8 +323,8 @@ export default function SpeakerRoleManager() {
 
           {speakerRoles.length === 0 && (
             <div className="text-center py-12 text-gray-500">
-              <p className="text-lg mb-2">No speaker roles yet</p>
-              <p className="text-sm">Click &ldquo;Add Speaker&rdquo; to create your first speaker role</p>
+              <p className="text-lg mb-2">{t('speaker.noVoice')}</p>
+              <p className="text-sm">{t('speaker.addSpeaker')}</p>
             </div>
           )}
         </div>
@@ -336,7 +334,7 @@ export default function SpeakerRoleManager() {
       {loading && (
         <div className="flex-shrink-0 bg-blue-50 border-t border-blue-200 px-4 py-3">
           <p className="text-sm text-blue-800">
-            Syncing with server...
+            {t('common.loading')}
           </p>
         </div>
       )}
@@ -345,22 +343,22 @@ export default function SpeakerRoleManager() {
       {showDeleteDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Confirm Deletion</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('common.confirm')}</h3>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to delete this speaker role? This will also delete the voice file and subsequent speakers will be reindexed. This action cannot be undone.
+              {t('speaker.deleteConfirm')}
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleCancelDelete}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleConfirmDelete}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>

@@ -1,0 +1,55 @@
+{
+  "errors": {
+    "bad_request": "错误的请求",
+    "not_found": "未找到",
+    "resource_not_found": "未找到请求的资源",
+    "internal_error": "内部服务器错误",
+    "unexpected_error": "发生了意外错误",
+    "file_too_large": "文件过大",
+    "max_file_size": "最大文件大小为 {size}MB",
+    "validation_error": "验证错误",
+    "project_not_found": "项目未找到",
+    "speaker_not_found": "说话人未找到",
+    "session_not_found": "会话未找到",
+    "generation_not_found": "生成记录未找到",
+    "invalid_project_name": "无效的项目名称",
+    "project_name_required": "项目名称为必填项",
+    "project_name_too_long": "项目名称最多 100 个字符",
+    "project_name_invalid_chars": "项目名称只能包含字母、数字、空格、连字符和下划线",
+    "dialog_format_error": "对话格式错误",
+    "invalid_speaker_format": "第 {line} 行的说话人格式无效",
+    "no_content_after_speaker": "第 {line} 行的说话人名称后没有内容",
+    "file_upload_error": "文件上传错误",
+    "invalid_file_type": "无效的文件类型。支持的格式：{formats}",
+    "generation_already_running": "已有生成任务正在运行",
+    "no_speakers_found": "项目中未找到说话人",
+    "session_required": "会话为必填项"
+  },
+  "success": {
+    "project_created": "项目创建成功",
+    "project_updated": "项目更新成功",
+    "project_deleted": "项目删除成功",
+    "speaker_created": "说话人创建成功",
+    "speaker_updated": "说话人更新成功",
+    "speaker_deleted": "说话人删除成功",
+    "voice_uploaded": "语音上传成功",
+    "session_created": "会话创建成功",
+    "session_updated": "会话更新成功",
+    "session_deleted": "会话删除成功",
+    "generation_started": "生成任务启动成功",
+    "generation_deleted": "生成记录删除成功",
+    "generations_deleted": "生成记录批量删除成功"
+  },
+  "status": {
+    "healthy": "服务正常",
+    "pending": "等待中",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败"
+  },
+  "validation": {
+    "required_field": "{field} 为必填项",
+    "invalid_format": "{field} 格式无效",
+    "out_of_range": "{field} 必须在 {min} 到 {max} 之间"
+  }
+}
