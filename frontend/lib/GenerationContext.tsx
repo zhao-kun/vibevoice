@@ -165,21 +165,24 @@ export function GenerationProvider({ children, projectId }: GenerationProviderPr
       throw new Error('No project selected');
     }
 
+    // Optimistic update - remove from local state immediately
+    const previousGenerations = generations;
+    setGenerations(prevGenerations =>
+      prevGenerations.filter(g => g.request_id !== requestId)
+    );
+
     try {
-      setLoading(true);
       setError(null);
       await api.deleteGeneration(projectId, requestId);
-
-      // Refresh generations list
-      await fetchGenerations();
+      // Success - the item is already removed from UI
     } catch (err) {
+      // Rollback on error - restore the previous state
+      setGenerations(previousGenerations);
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete generation';
       setError(errorMessage);
       throw err;
-    } finally {
-      setLoading(false);
     }
-  }, [projectId, fetchGenerations]);
+  }, [projectId, generations]);
 
   // Batch delete multiple generations
   const batchDeleteGenerations = useCallback(async (requestIds: string[]): Promise<{ deleted_count: number; failed_count: number }> => {
@@ -187,26 +190,34 @@ export function GenerationProvider({ children, projectId }: GenerationProviderPr
       throw new Error('No project selected');
     }
 
+    // Optimistic update - remove from local state immediately
+    const previousGenerations = generations;
+    const requestIdSet = new Set(requestIds);
+    setGenerations(prevGenerations =>
+      prevGenerations.filter(g => !requestIdSet.has(g.request_id))
+    );
+
     try {
-      setLoading(true);
       setError(null);
       const response = await api.batchDeleteGenerations(projectId, requestIds);
 
-      // Refresh generations list
-      await fetchGenerations();
+      // If there were failures, we should refresh to get accurate state
+      if (response.failed_count > 0) {
+        await fetchGenerations();
+      }
 
       return {
         deleted_count: response.deleted_count,
         failed_count: response.failed_count
       };
     } catch (err) {
+      // Rollback on error - restore the previous state
+      setGenerations(previousGenerations);
       const errorMessage = err instanceof Error ? err.message : 'Failed to delete generations';
       setError(errorMessage);
       throw err;
-    } finally {
-      setLoading(false);
     }
-  }, [projectId, fetchGenerations]);
+  }, [projectId, generations, fetchGenerations]);
 
   // Refresh both current and all generations
   const refreshAll = useCallback(async () => {
