@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface AudioPlayerProps {
   voiceFileUrl: string; // URL to fetch the audio file from backend
@@ -27,6 +28,8 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
   const [editMode, setEditMode] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<{ start: number; end: number } | null>(null);
   const [isTrimming, setIsTrimming] = useState(false);
+
+  const { t } = useLanguage();
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -241,7 +244,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.121 14.121L19 19m-7-7l7-7m-7 7l-2.879 2.879M12 12L9.121 9.121m0 5.758a3 3 0 10-4.243 4.243 3 3 0 004.243-4.243zm0-5.758a3 3 0 10-4.243-4.243 3 3 0 004.243 4.243z" />
               </svg>
-              {editMode ? 'Cancel Edit' : 'Edit Voice'}
+              {editMode ? t('common.cancelEdit') : t('common.editVoice')}
             </button>
           )}
           <button
@@ -251,7 +254,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Change Voice
+            {t('common.changeVoice')}
           </button>
           {onRemoveVoice && (
             <button
@@ -261,7 +264,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              Remove Voice
+              {t('common.removeVoice')}
             </button>
           )}
         </div>
@@ -289,13 +292,13 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M6 4l10 6-10 6V4z" />
                     </svg>
-                    Play Selection
+                    {t('common.playSelection')}
                   </button>
                   <button
                     onClick={handleClearRegion}
                     className="text-xs text-blue-600 hover:text-blue-800 underline"
                   >
-                    Clear
+                    {t('common.clear')}
                   </button>
                 </div>
               </div>
@@ -309,7 +312,7 @@ export default function AudioPlayer({ voiceFileUrl, voiceFileName, onChangeVoice
               disabled={!selectedRegion || isTrimming}
               className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {isTrimming ? 'Saving...' : 'Save Trimmed Audio'}
+              {isTrimming ? t('common.saving') : t('common.saveTrimmedAudio')}
             </button>
           </div>
         </>

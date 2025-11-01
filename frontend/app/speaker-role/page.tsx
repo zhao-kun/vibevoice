@@ -3,12 +3,14 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/lib/ProjectContext";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { SpeakerRoleProvider } from "@/lib/SpeakerRoleContext";
 import SpeakerRoleManager from "@/components/SpeakerRoleManager";
 
 export default function SpeakerRolePage() {
   const router = useRouter();
   const { currentProject, loading } = useProject();
+  const { t } = useLanguage();
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
@@ -28,7 +30,7 @@ export default function SpeakerRolePage() {
             {/* Header */}
             <header className="bg-white border-b border-gray-200 px-6 py-4">
               <div className="flex items-center space-x-2 mb-1">
-                <h1 className="text-2xl font-bold text-gray-900">Create Speaker Role</h1>
+                <h1 className="text-2xl font-bold text-gray-900">{t('navigation.speakerRole')}</h1>
                 {currentProject && (
                   <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                     {currentProject.name}
@@ -36,7 +38,7 @@ export default function SpeakerRolePage() {
                 )}
               </div>
               <p className="text-sm text-gray-500">
-                Manage speaker voices for your project
+                {t('speaker.title')}
               </p>
             </header>
 
@@ -49,15 +51,15 @@ export default function SpeakerRolePage() {
       ) : (
         <>
           <header className="bg-white border-b border-gray-200 px-6 py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Create Speaker Role</h1>
-            <p className="text-sm text-gray-500 mt-1">Manage speaker voices for your project</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('navigation.speakerRole')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('speaker.title')}</p>
           </header>
 
           <div className="flex-1 flex items-center justify-center bg-gray-50">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-500">
-                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
+                {loading ? t('common.loading') : t('project.selectProject')}
               </p>
             </div>
           </div>

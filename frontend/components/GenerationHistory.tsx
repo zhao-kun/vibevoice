@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useProject } from '@/lib/ProjectContext';
 import { useGeneration } from '@/lib/GenerationContext';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { api } from '@/lib/api';
 import type { Generation } from '@/types/generation';
 import { InferencePhase, getOffloadingMetrics } from '@/types/generation';
@@ -11,6 +12,7 @@ import toast from 'react-hot-toast';
 function GenerationHistory() {
   const { currentProject } = useProject();
   const { generations, loading, deleteGeneration, batchDeleteGenerations } = useGeneration();
+  const { t } = useLanguage();
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Pagination state
@@ -143,17 +145,17 @@ function GenerationHistory() {
   const getStatusLabel = (status: InferencePhase): string => {
     switch (status) {
       case InferencePhase.COMPLETED:
-        return 'Completed';
+        return t('generation.statusCompleted');
       case InferencePhase.FAILED:
-        return 'Failed';
+        return t('generation.statusFailed');
       case InferencePhase.PENDING:
-        return 'Pending';
+        return t('generation.statusPending');
       case InferencePhase.PREPROCESSING:
-        return 'Preprocessing';
+        return t('generation.statusPreprocessing');
       case InferencePhase.INFERENCING:
-        return 'Inferencing';
+        return t('generation.statusInferencing');
       case InferencePhase.SAVING_AUDIO:
-        return 'Saving Audio';
+        return t('generation.statusSavingAudio');
       default:
         return status;
     }
@@ -180,7 +182,7 @@ function GenerationHistory() {
                 <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
                 </svg>
-                <label className="text-sm font-semibold text-gray-800">Generated Audio</label>
+                <label className="text-sm font-semibold text-gray-800">{t('generation.generatedAudio')}</label>
               </div>
               <a
                 href={audioUrl + '?download=true'}
@@ -190,7 +192,7 @@ function GenerationHistory() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                Download
+                {t('generation.download')}
               </a>
             </div>
             <audio
@@ -203,7 +205,7 @@ function GenerationHistory() {
             </audio>
             <div className="mt-2 flex items-center gap-4 text-xs text-gray-600">
               {details?.audio_duration_seconds && (
-                <span>Duration: {details.audio_duration_seconds.toFixed(2)}s</span>
+                <span>{t('generation.duration')}: {details.audio_duration_seconds.toFixed(2)}s</span>
               )}
               {generation.output_filename && (
                 <span className="font-mono truncate">{generation.output_filename}</span>
@@ -215,34 +217,34 @@ function GenerationHistory() {
         {/* Basic Information */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-gray-600">Request ID</label>
+            <label className="text-xs font-medium text-gray-600">{t('generation.requestId')}</label>
             <p className="text-sm font-mono text-gray-900 break-all">{generation.request_id}</p>
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600">Session ID</label>
+            <label className="text-xs font-medium text-gray-600">{t('generation.sessionId')}</label>
             <p className="text-sm text-gray-900">{generation.session_id}</p>
           </div>
         </div>
 
         {/* Model Parameters */}
         <div>
-          <label className="text-xs font-medium text-gray-600 block mb-2">Model Parameters</label>
+          <label className="text-xs font-medium text-gray-600 block mb-2">{t('generation.modelParameters')}</label>
           <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded p-3">
             <div>
-              <p className="text-xs text-gray-600">CFG Scale</p>
+              <p className="text-xs text-gray-600">{t('generation.cfgScale')}</p>
               <p className="text-sm font-semibold">{generation.cfg_scale ?? 'N/A'}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-600">Seeds</p>
+              <p className="text-xs text-gray-600">{t('generation.seeds')}</p>
               <p className="text-sm font-semibold">{generation.seeds}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-600">Attention</p>
+              <p className="text-xs text-gray-600">{t('generation.attention')}</p>
               <p className="text-sm font-semibold">{generation.attn_implementation ?? 'N/A'}</p>
             </div>
             {generation.output_filename && (
               <div>
-                <p className="text-xs text-gray-600">Output File</p>
+                <p className="text-xs text-gray-600">{t('generation.outputFile')}</p>
                 <p className="text-sm font-semibold font-mono text-xs break-all">{generation.output_filename}</p>
               </div>
             )}
@@ -252,10 +254,10 @@ function GenerationHistory() {
         {/* Phase-specific details */}
         {generation.status === InferencePhase.PREPROCESSING && details && (
           <div>
-            <label className="text-xs font-medium text-gray-600 block mb-2">Preprocessing Information</label>
+            <label className="text-xs font-medium text-gray-600 block mb-2">{t('generation.preprocessingInformation')}</label>
             {details.unique_speaker_names && (
               <div className="bg-blue-50 rounded p-3">
-                <p className="text-xs font-medium mb-2">Speakers ({details.unique_speaker_names.length})</p>
+                <p className="text-xs font-medium mb-2">{t('generation.speakers')} ({details.unique_speaker_names.length})</p>
                 <div className="flex flex-wrap gap-1">
                   {details.unique_speaker_names.map((speaker: string, idx: number) => (
                     <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
@@ -267,7 +269,7 @@ function GenerationHistory() {
             )}
             {details.scripts && (
               <div className="bg-blue-50 rounded p-3 mt-2">
-                <p className="text-xs">Dialog Lines: <span className="font-semibold">{details.scripts.length}</span></p>
+                <p className="text-xs">{t('generation.dialogLines')}: <span className="font-semibold">{details.scripts.length}</span></p>
               </div>
             )}
           </div>
@@ -275,36 +277,36 @@ function GenerationHistory() {
 
         {(generation.status == InferencePhase.SAVING_AUDIO || generation.status == InferencePhase.COMPLETED) && details && (
           <div className="space-y-3">
-            <label className="text-sm font-semibold text-gray-800 block border-b border-gray-300 pb-2">📊 Generation Statistics</label>
+            <label className="text-sm font-semibold text-gray-800 block border-b border-gray-300 pb-2">📊 {t('generation.generationStatistics')}</label>
 
             {/* Performance Summary Card */}
             {(details.generation_time !== undefined || details.audio_duration_seconds !== undefined || details.real_time_factor !== undefined) && (
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
-                <p className="text-xs font-semibold text-green-800 mb-3">⚡ Performance Metrics</p>
+                <p className="text-xs font-semibold text-green-800 mb-3">⚡ {t('generation.performanceMetrics')}</p>
                 <div className="grid grid-cols-3 gap-4">
                   {details.generation_time !== undefined && (
                     <div className="text-center">
                       <p className="text-2xl font-bold text-green-700">{details.generation_time.toFixed(2)}s</p>
-                      <p className="text-xs text-gray-600 mt-1">Generation Time</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.generationTime')}</p>
                     </div>
                   )}
                   {details.audio_duration_seconds !== undefined && (
                     <div className="text-center">
                       <p className="text-2xl font-bold text-blue-700">{details.audio_duration_seconds.toFixed(2)}s</p>
-                      <p className="text-xs text-gray-600 mt-1">Audio Duration</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.audioDuration')}</p>
                     </div>
                   )}
                   {details.real_time_factor !== undefined && (
                     <div className="text-center">
                       <p className="text-2xl font-bold text-purple-700">{details.real_time_factor.toFixed(2)}×</p>
-                      <p className="text-xs text-gray-600 mt-1">Real-Time Factor</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.realTimeFactor')}</p>
                     </div>
                   )}
                 </div>
                 {details.number_of_segments !== undefined && (
                   <div className="mt-3 pt-3 border-t border-green-200 text-center">
                     <p className="text-xs text-gray-600">
-                      Generated <span className="font-bold text-green-700">{details.number_of_segments}</span> segments
+                      {t('generation.generatedSegments').replace('{count}', details.number_of_segments.toString())}
                     </p>
                   </div>
                 )}
@@ -314,24 +316,24 @@ function GenerationHistory() {
             {/* Token Statistics */}
             {(details.prefilling_tokens !== undefined || details.generated_tokens !== undefined || details.total_tokens !== undefined) && (
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <p className="text-xs font-semibold text-blue-800 mb-3">🔢 Token Statistics</p>
+                <p className="text-xs font-semibold text-blue-800 mb-3">🔢 {t('generation.tokenStatistics')}</p>
                 <div className="grid grid-cols-3 gap-4">
                   {details.prefilling_tokens !== undefined && (
                     <div className="text-center">
                       <p className="text-xl font-bold text-blue-700">{details.prefilling_tokens.toLocaleString()}</p>
-                      <p className="text-xs text-gray-600 mt-1">Prefilling</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.prefilling')}</p>
                     </div>
                   )}
                   {details.generated_tokens !== undefined && (
                     <div className="text-center">
                       <p className="text-xl font-bold text-blue-700">{details.generated_tokens.toLocaleString()}</p>
-                      <p className="text-xs text-gray-600 mt-1">Generated</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.generated')}</p>
                     </div>
                   )}
                   {details.total_tokens !== undefined && (
                     <div className="text-center">
                       <p className="text-xl font-bold text-blue-700">{details.total_tokens.toLocaleString()}</p>
-                      <p className="text-xs text-gray-600 mt-1">Total Tokens</p>
+                      <p className="text-xs text-gray-600 mt-1">{t('generation.totalTokens')}</p>
                     </div>
                   )}
                 </div>
@@ -348,26 +350,26 @@ function GenerationHistory() {
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-orange-700">
                         <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                       </svg>
-                      <p className="text-xs font-semibold text-orange-800">⚙️ Offloading Metrics</p>
+                      <p className="text-xs font-semibold text-orange-800">⚙️ {t('generation.offloadingMetrics')}</p>
                     </div>
 
                     <div className="space-y-3">
                       {/* Configuration */}
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-700">Configuration:</span>
+                        <span className="text-gray-700">{t('generation.configuration')}:</span>
                         <span className="font-semibold text-orange-900">{metrics.gpu_layers} GPU / {metrics.cpu_layers} CPU layers</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-700">VRAM Saved:</span>
+                        <span className="text-gray-700">{t('generation.vramSaved')}:</span>
                         <span className="font-semibold text-orange-900">~{metrics.vram_saved_gb} GB</span>
                       </div>
 
                       {/* Performance Breakdown */}
                       <div className="border-t border-orange-200 pt-3">
-                        <div className="font-semibold text-xs text-orange-800 mb-2">Performance Breakdown:</div>
+                        <div className="font-semibold text-xs text-orange-800 mb-2">{t('generation.performanceBreakdown')}:</div>
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-700">Pure Computation:</span>
+                            <span className="text-gray-700">{t('generation.pureComputation')}:</span>
                             <span className="font-mono text-gray-900">
                               {(metrics.time_breakdown.pure_computation_ms / 1000).toFixed(2)}s
                               <span className="text-gray-500 ml-1">
@@ -376,7 +378,7 @@ function GenerationHistory() {
                             </span>
                           </div>
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-700">CPU→GPU Transfers:</span>
+                            <span className="text-gray-700">{t('generation.cpuToGpuTransfers')}:</span>
                             <span className="font-mono text-gray-900">
                               {(metrics.time_breakdown.cpu_to_gpu_transfer_ms / 1000).toFixed(2)}s
                               <span className="text-gray-500 ml-1">
@@ -385,7 +387,7 @@ function GenerationHistory() {
                             </span>
                           </div>
                           <div className="flex justify-between text-xs">
-                            <span className="text-gray-700">GPU→CPU Releases:</span>
+                            <span className="text-gray-700">{t('generation.gpuToCpuReleases')}:</span>
                             <span className="font-mono text-gray-900">
                               {(metrics.time_breakdown.gpu_to_cpu_release_ms / 1000).toFixed(2)}s
                               <span className="text-gray-500 ml-1">
@@ -394,7 +396,7 @@ function GenerationHistory() {
                             </span>
                           </div>
                           <div className="flex justify-between text-xs font-semibold border-t border-orange-200 pt-2">
-                            <span className="text-gray-700">Transfer Overhead:</span>
+                            <span className="text-gray-700">{t('generation.transferOverhead')}:</span>
                             <span className="text-orange-900">{metrics.overhead_percentage.toFixed(1)}%</span>
                           </div>
                         </div>
@@ -424,7 +426,7 @@ function GenerationHistory() {
             {/* Speakers */}
             {details.unique_speaker_names && (
               <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                <p className="text-xs font-semibold text-purple-800 mb-2">🎤 Speakers Used ({details.unique_speaker_names.length})</p>
+                <p className="text-xs font-semibold text-purple-800 mb-2">🎤 {t('generation.speakersUsed').replace('{count}', details.unique_speaker_names.length.toString())}</p>
                 <div className="flex flex-wrap gap-2">
                   {details.unique_speaker_names.map((speaker: string, idx: number) => (
                     <span key={idx} className="px-3 py-1.5 bg-purple-100 text-purple-900 rounded-full text-xs font-medium">
@@ -438,7 +440,7 @@ function GenerationHistory() {
             {/* Output Path */}
             {details.output_audio_path && (
               <div className="bg-gray-100 rounded-lg p-4 border border-gray-300">
-                <p className="text-xs font-semibold text-gray-700 mb-2">📁 Output File Path</p>
+                <p className="text-xs font-semibold text-gray-700 mb-2">📁 {t('generation.outputPath')}</p>
                 <p className="text-xs font-mono break-all text-gray-600 bg-white p-2 rounded border border-gray-200">{details.output_audio_path}</p>
               </div>
             )}
@@ -447,7 +449,7 @@ function GenerationHistory() {
 
         {generation.status === InferencePhase.FAILED && details && (
           <div>
-            <label className="text-xs font-medium text-gray-600 block mb-2">Error Information</label>
+            <label className="text-xs font-medium text-gray-600 block mb-2">{t('generation.errorInformation')}</label>
             <div className="bg-red-50 rounded p-3">
               <pre className="text-xs whitespace-pre-wrap text-red-900">
                 {details.error || JSON.stringify(details, null, 2)}
@@ -460,11 +462,11 @@ function GenerationHistory() {
         <div className="bg-gray-50 rounded p-3">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <p className="text-gray-600">Created</p>
+              <p className="text-gray-600">{t('generation.created')}</p>
               <p className="font-medium">{formatDate(generation.created_at)}</p>
             </div>
             <div>
-              <p className="text-gray-600">Updated</p>
+              <p className="text-gray-600">{t('generation.updated')}</p>
               <p className="font-medium">{formatDate(generation.updated_at)}</p>
             </div>
           </div>
@@ -476,7 +478,7 @@ function GenerationHistory() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <p className="text-gray-500">Loading generation history...</p>
+        <p className="text-gray-500">{t('generation.loadingHistory')}</p>
       </div>
     );
   }
@@ -486,7 +488,7 @@ function GenerationHistory() {
       {/* Header with selection controls */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xl font-semibold">Generation History</h2>
+          <h2 className="text-xl font-semibold">{t('generation.generationHistory')}</h2>
           {selectedIds.size > 0 && (
             <button
               onClick={handleBulkDeleteClick}
@@ -495,19 +497,21 @@ function GenerationHistory() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              Delete Selected ({selectedIds.size})
+              {t('generation.deleteSelected').replace('{count}', selectedIds.size.toString())}
             </button>
           )}
         </div>
         <p className="text-sm text-gray-600">
-          Total: {generations.length} generation{generations.length !== 1 ? 's' : ''}
-          {selectedIds.size > 0 && ` • ${selectedIds.size} selected`}
+          {t('generation.totalGenerations')
+            .replace('{count}', generations.length.toString())
+            .replace('{plural}', generations.length !== 1 ? 's' : '')}
+          {selectedIds.size > 0 && ` ${t('generation.itemsSelected').replace('{count}', selectedIds.size.toString())}`}
         </p>
       </div>
 
       {generations.length === 0 ? (
         <div className="flex items-center justify-center flex-1 text-gray-500">
-          <p>No generations yet. Start your first generation!</p>
+          <p>{t('generation.noHistory')}</p>
         </div>
       ) : (
         <>
@@ -524,7 +528,7 @@ function GenerationHistory() {
                 className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
               />
               <label className="text-sm text-gray-700 cursor-pointer" onClick={toggleSelectAll}>
-                {isAllSelected ? 'Deselect All' : 'Select All on Page'}
+                {isAllSelected ? t('generation.deselectAll') : t('generation.selectAllOnPage')}
               </label>
             </div>
           )}
@@ -571,11 +575,11 @@ function GenerationHistory() {
                         </div>
 
                         <p className="text-sm text-gray-600 mb-1">
-                          Session: <span className="font-medium">{generation.session_id}</span>
+                          {t('generation.session')}: <span className="font-medium">{generation.session_id}</span>
                         </p>
 
                         <p className="text-xs text-gray-500">
-                          Created: {formatDate(generation.created_at)}
+                          {t('generation.created')}: {formatDate(generation.created_at)}
                         </p>
 
                         {generation.percentage !== null && (
@@ -601,14 +605,14 @@ function GenerationHistory() {
                         >
                           {isExpanded ? (
                             <>
-                              <span>Hide</span>
+                              <span>{t('generation.hide')}</span>
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                               </svg>
                             </>
                           ) : (
                             <>
-                              <span>Details</span>
+                              <span>{t('generation.viewDetails')}</span>
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
@@ -621,7 +625,7 @@ function GenerationHistory() {
                             onClick={() => handleDownload(generation)}
                             className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
                           >
-                            Download
+                            {t('generation.download')}
                           </button>
                         )}
 
@@ -632,7 +636,7 @@ function GenerationHistory() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                          Delete
+                          {t('common.delete')}
                         </button>
                       </div>
                     </div>
@@ -648,7 +652,7 @@ function GenerationHistory() {
           {/* Pagination controls */}
           <div className="mt-4 flex items-center justify-between border-t border-gray-300 pt-4">
             <div className="flex items-center gap-2">
-              <label className="text-sm text-gray-700">Items per page:</label>
+              <label className="text-sm text-gray-700">{t('generation.itemsPerPage')}:</label>
               <select
                 value={itemsPerPage}
                 onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
@@ -663,7 +667,10 @@ function GenerationHistory() {
 
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-700">
-                Page {currentPage} of {totalPages} ({startIndex + 1}-{Math.min(endIndex, generations.length)} of {generations.length})
+                {t('generation.page')} {currentPage} {t('generation.of')} {totalPages} ({t('generation.showingItems')
+                  .replace('{start}', (startIndex + 1).toString())
+                  .replace('{end}', Math.min(endIndex, generations.length).toString())
+                  .replace('{total}', generations.length.toString())})
               </span>
               <div className="flex gap-1">
                 <button
@@ -704,24 +711,26 @@ function GenerationHistory() {
       {showDeleteDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-2">Confirm Deletion</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('generation.confirmDeletionTitle')}</h3>
             <p className="text-gray-600 mb-4">
               {deleteTarget === 'single'
-                ? 'Are you sure you want to delete this generation? This will also delete the generated audio file.'
-                : `Are you sure you want to delete ${selectedIds.size} generation${selectedIds.size > 1 ? 's' : ''}? This will also delete the generated audio files.`}
+                ? t('generation.confirmSingleDelete')
+                : t('generation.confirmBulkDelete')
+                    .replace('{count}', selectedIds.size.toString())
+                    .replace('{plural}', selectedIds.size > 1 ? 's' : '')}
             </p>
             <div className="flex gap-3 justify-end">
               <button
                 onClick={handleCancelDelete}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleConfirmDelete}
                 className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
               >
-                Delete
+                {t('common.delete')}
               </button>
             </div>
           </div>

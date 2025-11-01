@@ -6,6 +6,7 @@ from backend.api import api_bp
 from backend.services.dialog_session_service import DialogSessionService
 from backend.services.speaker_service import SpeakerService
 from backend.services.project_service import ProjectService
+from backend.i18n import t
 
 
 def get_dialog_session_service(project_id: str) -> DialogSessionService:
@@ -43,8 +44,8 @@ def list_sessions(project_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         sessions = service.list_sessions()
@@ -56,7 +57,7 @@ def list_sessions(project_id):
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to list sessions',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -77,22 +78,22 @@ def get_session(project_id, session_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         session = service.get_session(session_id)
         if not session:
             return jsonify({
-                'error': 'Session not found',
-                'message': f'Session with ID "{session_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.session_not_found')
             }), 404
 
         return jsonify(session.to_dict()), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to get session',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -119,14 +120,14 @@ def create_session(project_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         data = request.get_json()
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
@@ -136,8 +137,8 @@ def create_session(project_id):
 
         if not name:
             return jsonify({
-                'error': 'Bad Request',
-                'message': 'Session name is required'
+                'error': t('errors.bad_request'),
+                'message': t('errors.validation_error')
             }), 400
 
         # Allow empty dialog_text - user can add dialogs later
@@ -147,12 +148,12 @@ def create_session(project_id):
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to create session',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -180,14 +181,14 @@ def update_session(project_id, session_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         data = request.get_json()
         if not data:
             return jsonify({
-                'error': 'Bad Request',
+                'error': t('errors.bad_request'),
                 'message': 'Request body must be JSON'
             }), 400
 
@@ -198,20 +199,20 @@ def update_session(project_id, session_id):
         session = service.update_session(session_id, name, description, dialog_text)
         if not session:
             return jsonify({
-                'error': 'Session not found',
-                'message': f'Session with ID "{session_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.session_not_found')
             }), 404
 
         return jsonify(session.to_dict()), 200
 
     except ValueError as e:
         return jsonify({
-            'error': 'Validation Error',
+            'error': t('errors.validation_error'),
             'message': str(e)
         }), 400
     except Exception as e:
         return jsonify({
-            'error': 'Failed to update session',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -232,25 +233,25 @@ def delete_session(project_id, session_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         success = service.delete_session(session_id)
         if not success:
             return jsonify({
-                'error': 'Session not found',
-                'message': f'Session with ID "{session_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.session_not_found')
             }), 404
 
         return jsonify({
-            'message': 'Session deleted successfully',
+            'message': t('success.session_deleted'),
             'session_id': session_id
         }), 200
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to delete session',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -271,15 +272,15 @@ def get_session_text(project_id, session_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         text = service.get_session_text(session_id)
         if text is None:
             return jsonify({
-                'error': 'Session not found',
-                'message': f'Session with ID "{session_id}" does not exist or text file is missing'
+                'error': t('errors.not_found'),
+                'message': t('errors.session_not_found')
             }), 404
 
         return jsonify({
@@ -289,7 +290,7 @@ def get_session_text(project_id, session_id):
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to get session text',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500
 
@@ -310,21 +311,21 @@ def download_session_text(project_id, session_id):
         service = get_dialog_session_service(project_id)
         if not service:
             return jsonify({
-                'error': 'Project not found',
-                'message': f'Project with ID "{project_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.project_not_found')
             }), 404
 
         text_file_path = service.get_text_file_path(session_id)
         if not text_file_path or not text_file_path.exists():
             return jsonify({
-                'error': 'Text file not found',
-                'message': f'Text file for session "{session_id}" does not exist'
+                'error': t('errors.not_found'),
+                'message': t('errors.session_not_found')
             }), 404
 
         return send_file(text_file_path, as_attachment=True, download_name=f'dialog_{session_id}.txt')
 
     except Exception as e:
         return jsonify({
-            'error': 'Failed to download text file',
+            'error': t('errors.internal_error'),
             'message': str(e)
         }), 500

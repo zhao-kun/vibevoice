@@ -56,11 +56,17 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
+    // Get current language from localStorage
+    const locale = typeof window !== 'undefined'
+      ? localStorage.getItem('vibevoice-locale') || 'en'
+      : 'en';
+
     try {
       const response = await fetch(url, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
+          'X-Language': locale,
           ...options?.headers,
         },
       });

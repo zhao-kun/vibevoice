@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useSession } from '@/lib/SessionContext';
 import { useGeneration } from '@/lib/GenerationContext';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 import type { CreateGenerationRequest, OffloadingMode, OffloadingPreset } from '@/types/generation';
 
 // Preset information for offloading configurations
@@ -30,6 +31,7 @@ const PRESET_INFO = {
 export default function GenerationForm() {
   const { sessions } = useSession();
   const { startGeneration, loading } = useGeneration();
+  const { t } = useLanguage();
 
   const [formData, setFormData] = useState<CreateGenerationRequest>({
     dialog_session_id: '',
@@ -55,17 +57,17 @@ export default function GenerationForm() {
 
     // Validation
     if (!formData.dialog_session_id) {
-      setError('Please select a dialog session');
+      setError(t('generation.validationSelectSession'));
       return;
     }
 
     if (!formData.seeds || formData.seeds < 0) {
-      setError('Seeds must be a positive number');
+      setError(t('generation.validationSeedsPositive'));
       return;
     }
 
     if (!formData.cfg_scale || formData.cfg_scale <= 0) {
-      setError('CFG Scale must be greater than 0');
+      setError(t('generation.validationCfgScalePositive'));
       return;
     }
 
@@ -84,14 +86,14 @@ export default function GenerationForm() {
         ...formData,
         offloading,
       });
-      setSuccess(`Generation started successfully! Request ID: ${generation.request_id}`);
+      setSuccess(t('generation.startSuccess').replace('{requestId}', generation.request_id));
 
       // Reset form after 3 seconds
       setTimeout(() => {
         setSuccess(null);
       }, 3000);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start generation';
+      const errorMessage = err instanceof Error ? err.message : t('generation.startError');
       setError(errorMessage);
     }
   };
@@ -118,13 +120,13 @@ export default function GenerationForm() {
 
   return (
     <div className="border border-gray-300 rounded-lg p-6 bg-white">
-      <h2 className="text-xl font-semibold mb-4">Start New Generation</h2>
+      <h2 className="text-xl font-semibold mb-4">{t('generation.startNewGeneration')}</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Dialog Session Selection */}
         <div>
           <label htmlFor="dialog_session_id" className="block text-sm font-medium text-gray-700 mb-1">
-            Dialog Session <span className="text-red-500">*</span>
+            {t('generation.dialogSession')} <span className="text-red-500">*</span>
           </label>
           <select
             id="dialog_session_id"
@@ -134,7 +136,7 @@ export default function GenerationForm() {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           >
-            <option value="">Select a dialog session</option>
+            <option value="">{t('generation.selectDialogSession')}</option>
             {sessions.map(session => (
               <option key={session.sessionId} value={session.sessionId}>
                 {session.name} {session.description && `- ${session.description}`}
@@ -143,7 +145,7 @@ export default function GenerationForm() {
           </select>
           {sessions.length === 0 && (
             <p className="text-xs text-gray-500 mt-1">
-              No dialog sessions available. Create one first in Voice Contents Editor.
+              {t('generation.noSessionsAvailable')}
             </p>
           )}
         </div>
@@ -151,7 +153,7 @@ export default function GenerationForm() {
         {/* Model Type Selection */}
         <div>
           <label htmlFor="model_dtype" className="block text-sm font-medium text-gray-700 mb-1">
-            Model Type <span className="text-red-500">*</span>
+            {t('generation.modelType')} <span className="text-red-500">*</span>
           </label>
           <select
             id="model_dtype"
@@ -161,18 +163,18 @@ export default function GenerationForm() {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           >
-            <option value="float8_e4m3fn">float8_e4m3fn (Recommended)</option>
+            <option value="float8_e4m3fn">{t('generation.float8Recommended')}</option>
             <option value="bf16">bf16</option>
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            float8_e4m3fn is optimized for performance with minimal quality loss
+            {t('generation.float8Description')}
           </p>
         </div>
 
         {/* CFG Scale */}
         <div>
           <label htmlFor="cfg_scale" className="block text-sm font-medium text-gray-700 mb-1">
-            CFG Scale <span className="text-red-500">*</span>
+            {t('generation.cfgScale')} <span className="text-red-500">*</span>
           </label>
           <input
             type="number"
@@ -187,14 +189,14 @@ export default function GenerationForm() {
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            Classifier-Free Guidance scale (1.0-3.0 recommended, default: 1.3)
+            {t('generation.cfgScaleDescription')}
           </p>
         </div>
 
         {/* Seeds */}
         <div>
           <label htmlFor="seeds" className="block text-sm font-medium text-gray-700 mb-1">
-            Random Seed <span className="text-red-500">*</span>
+            {t('generation.randomSeed')} <span className="text-red-500">*</span>
           </label>
           <div className="flex gap-2">
             <input
@@ -211,7 +213,7 @@ export default function GenerationForm() {
               type="button"
               onClick={generateRandomSeed}
               className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              title="Generate random seed"
+              title={t('generation.generateRandomSeed')}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -226,14 +228,14 @@ export default function GenerationForm() {
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Random seed for reproducible generation (default: 42)
+            {t('generation.randomSeedDescription')}
           </p>
         </div>
 
         {/* Attention Implementation (Fixed) */}
         <div>
           <label htmlFor="attn_implementation" className="block text-sm font-medium text-gray-700 mb-1">
-            Attention Implementation
+            {t('generation.attentionImplementation')}
           </label>
           <input
             type="text"
@@ -244,7 +246,7 @@ export default function GenerationForm() {
             disabled
           />
           <p className="text-xs text-gray-500 mt-1">
-            Fixed to SDPA (Scaled Dot Product Attention)
+            {t('generation.attentionFixed')}
           </p>
         </div>
 
@@ -254,7 +256,7 @@ export default function GenerationForm() {
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
             </svg>
-            <h3 className="text-sm font-medium text-gray-700">Offloading (VRAM Optimization)</h3>
+            <h3 className="text-sm font-medium text-gray-700">{t('generation.offloadingVramOptimization')}</h3>
           </div>
 
           {/* Enable Checkbox */}
@@ -265,7 +267,7 @@ export default function GenerationForm() {
               onChange={(e) => setOffloadingEnabled(e.target.checked)}
               className="w-4 h-4 text-blue-500 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <span className="text-sm font-medium text-gray-700">Enable Offloading</span>
+            <span className="text-sm font-medium text-gray-700">{t('generation.enableOffloading')}</span>
           </label>
 
           {offloadingEnabled && (
@@ -280,7 +282,7 @@ export default function GenerationForm() {
                     onChange={(e) => setOffloadingMode(e.target.value as OffloadingMode)}
                     className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-sm font-medium text-gray-700">Preset (Recommended)</span>
+                  <span className="text-sm font-medium text-gray-700">{t('generation.presetRecommended')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -290,7 +292,7 @@ export default function GenerationForm() {
                     onChange={(e) => setOffloadingMode(e.target.value as OffloadingMode)}
                     className="w-4 h-4 text-blue-500 focus:ring-2 focus:ring-blue-500"
                   />
-                  <span className="text-sm font-medium text-gray-700">Manual (Advanced)</span>
+                  <span className="text-sm font-medium text-gray-700">{t('generation.manualAdvanced')}</span>
                 </label>
               </div>
 
@@ -298,7 +300,7 @@ export default function GenerationForm() {
               {offloadingMode === 'preset' && (
                 <div>
                   <label htmlFor="offloadingPreset" className="block text-sm font-medium text-gray-700 mb-1">
-                    Preset Configuration
+                    {t('generation.presetConfiguration')}
                   </label>
                   <select
                     id="offloadingPreset"
@@ -306,28 +308,28 @@ export default function GenerationForm() {
                     onChange={(e) => setOffloadingPreset(e.target.value as OffloadingPreset)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="balanced">Balanced</option>
-                    <option value="aggressive">Aggressive</option>
-                    <option value="extreme">Extreme</option>
+                    <option value="balanced">{t('generation.balanced')}</option>
+                    <option value="aggressive">{t('generation.aggressive')}</option>
+                    <option value="extreme">{t('generation.extreme')}</option>
                   </select>
 
                   {/* Info card for selected preset */}
                   <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="text-sm space-y-1">
                       <div className="font-medium text-blue-900">
-                        {offloadingPreset.charAt(0).toUpperCase() + offloadingPreset.slice(1)} Configuration
+                        {t(`generation.${offloadingPreset}Configuration`)}
                       </div>
                       <div className="text-blue-800">
-                        <strong>GPU Layers:</strong> {PRESET_INFO[offloadingPreset].gpu_layers} / 28
+                        <strong>{t('generation.gpuLayers')}:</strong> {PRESET_INFO[offloadingPreset].gpu_layers} / 28
                       </div>
                       <div className="text-blue-800">
-                        <strong>VRAM Savings:</strong> {PRESET_INFO[offloadingPreset].vram_savings}
+                        <strong>{t('generation.vramSavings')}:</strong> {PRESET_INFO[offloadingPreset].vram_savings}
                       </div>
                       <div className="text-blue-800">
-                        <strong>Speed:</strong> {PRESET_INFO[offloadingPreset].slowdown} slower than no offloading
+                        <strong>{t('generation.speed')}:</strong> {PRESET_INFO[offloadingPreset].slowdown} {t('generation.slowerThanNoOffloading')}
                       </div>
                       <div className="text-blue-700 text-xs mt-2">
-                        {PRESET_INFO[offloadingPreset].description}
+                        {t(`generation.recommendedFor${offloadingPreset === 'balanced' ? '12GbGpus' : offloadingPreset === 'aggressive' ? '8to12GbGpus' : '6to8GbGpus'}`)}
                       </div>
                     </div>
                   </div>
@@ -338,7 +340,7 @@ export default function GenerationForm() {
               {offloadingMode === 'manual' && (
                 <div>
                   <label htmlFor="manualGpuLayers" className="block text-sm font-medium text-gray-700 mb-1">
-                    GPU Layers: {manualGpuLayers}
+                    {t('generation.gpuLayers')}: {manualGpuLayers}
                   </label>
                   <input
                     type="range"
@@ -350,11 +352,11 @@ export default function GenerationForm() {
                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                   />
                   <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>1 (More VRAM savings)</span>
-                    <span>28 (Less VRAM savings)</span>
+                    <span>1 ({t('generation.moreVramSavings')})</span>
+                    <span>28 ({t('generation.lessVramSavings')})</span>
                   </div>
                   <p className="text-xs text-gray-600 mt-2">
-                    Fewer GPU layers = More VRAM savings but slower inference
+                    {t('generation.fewerGpuLayersInfo')}
                   </p>
                 </div>
               )}
@@ -382,7 +384,7 @@ export default function GenerationForm() {
           disabled={loading || sessions.length === 0}
           className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {loading ? 'Starting Generation...' : 'Start Generation'}
+          {loading ? t('generation.startingGeneration') : t('generation.startGeneration')}
         </button>
       </form>
     </div>

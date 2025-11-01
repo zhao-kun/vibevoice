@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { DialogLine, SpeakerInfo } from "@/types/dialog";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import toast from "react-hot-toast";
 
 interface DialogEditorProps {
@@ -29,6 +30,7 @@ export default function DialogEditor({
   hasUnsavedChanges,
   isSaving,
 }: DialogEditorProps) {
+  const { t } = useLanguage();
   const [viewMode, setViewMode] = useState<'visual' | 'text'>('visual');
   const [textContent, setTextContent] = useState('');
 
@@ -56,7 +58,7 @@ export default function DialogEditor({
 
       const match = trimmedLine.match(/^(.+?):\s*(.*)$/);
       if (!match) {
-        toast.error(`Invalid format: "${trimmedLine.substring(0, 50)}..."`);
+        toast.error(`${t('voiceEditor.invalidFormat')}: "${trimmedLine.substring(0, 50)}..."`);
         return null;
       }
 
@@ -64,7 +66,7 @@ export default function DialogEditor({
       const speaker = speakers.find(s => s.displayName === speakerName.trim());
 
       if (!speaker) {
-        toast.error(`Unknown speaker: "${speakerName}". Available speakers: ${speakers.map(s => s.displayName).join(', ')}`);
+        toast.error(`${t('voiceEditor.unknownSpeaker')}: "${speakerName}". ${t('voiceEditor.availableSpeakers')}: ${speakers.map(s => s.displayName).join(', ')}`);
         return null;
       }
 
@@ -99,7 +101,7 @@ export default function DialogEditor({
         // Valid! Update the dialog lines
         onSetLines(parsed);
         setViewMode('visual');
-        toast.success('Text parsed successfully');
+        toast.success(t('voiceEditor.textParsedSuccess'));
       }
       // If invalid, stay in text view (error already shown)
     }
@@ -110,7 +112,7 @@ export default function DialogEditor({
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center space-x-3">
-            <h2 className="text-lg font-semibold text-gray-800">Dialog Editor</h2>
+            <h2 className="text-lg font-semibold text-gray-800">{t('voiceEditor.dialogEditor')}</h2>
             {/* View Mode Toggle */}
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
@@ -121,7 +123,7 @@ export default function DialogEditor({
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                Visual
+                {t('session.visualEditor')}
               </button>
               <button
                 onClick={() => viewMode === 'visual' && handleToggleView()}
@@ -131,33 +133,33 @@ export default function DialogEditor({
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                Text
+                {t('session.textEditor')}
               </button>
             </div>
           </div>
           <div className="flex items-center space-x-2">
             {hasUnsavedChanges && (
               <span className="text-xs text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg">
-                Unsaved changes
+                {t('voiceEditor.unsavedChanges')}
               </span>
             )}
             <button
               onClick={onClear}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
             >
-              Clear
+              {t('common.clear')}
             </button>
             <button
               onClick={onSave}
               disabled={!hasUnsavedChanges || isSaving}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>
         <p className="text-sm text-gray-500">
-          {dialogLines.length} dialog lines • {viewMode === 'visual' ? 'Edit content and manage sequence' : 'Edit as raw text (format: "Speaker Name: dialog text")'}
+          {dialogLines.length} {t('voiceEditor.dialogLinesCount')} • {viewMode === 'visual' ? t('voiceEditor.editContentHint') : t('voiceEditor.editTextHint')}
         </p>
       </div>
 
@@ -166,7 +168,7 @@ export default function DialogEditor({
           <textarea
             value={textContent}
             onChange={(e) => setTextContent(e.target.value)}
-            placeholder="Enter dialog in the format:&#10;&#10;Speaker 1: Dialog text here&#10;&#10;Speaker 2: Another line"
+            placeholder={t('voiceEditor.textPlaceholder')}
             className="w-full h-full p-4 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700 font-mono text-sm"
           />
         ) : dialogLines.length === 0 ? (
@@ -175,8 +177,8 @@ export default function DialogEditor({
               <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              <p className="text-lg mb-2">No dialog lines yet</p>
-              <p className="text-sm">Click a speaker on the left to add a new dialog line</p>
+              <p className="text-lg mb-2">{t('voiceEditor.noDialogLines')}</p>
+              <p className="text-sm">{t('voiceEditor.clickSpeakerHint')}</p>
             </div>
           </div>
         ) : (
@@ -195,7 +197,7 @@ export default function DialogEditor({
                     </div>
                     <div>
                       <div className="font-medium text-gray-800">{speaker?.displayName}</div>
-                      <div className="text-xs text-gray-500">Line {index + 1}</div>
+                      <div className="text-xs text-gray-500">{t('voiceEditor.lineNumber')} {index + 1}</div>
                     </div>
                   </div>
 
@@ -209,7 +211,7 @@ export default function DialogEditor({
                           ? "text-gray-300 cursor-not-allowed"
                           : "text-gray-600 hover:bg-gray-200"
                       }`}
-                      title="Move up"
+                      title={t('voiceEditor.moveUp')}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -225,7 +227,7 @@ export default function DialogEditor({
                           ? "text-gray-300 cursor-not-allowed"
                           : "text-gray-600 hover:bg-gray-200"
                       }`}
-                      title="Move down"
+                      title={t('voiceEditor.moveDown')}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -236,7 +238,7 @@ export default function DialogEditor({
                     <button
                       onClick={() => onDeleteLine(line.id)}
                       className="p-1 rounded text-red-600 hover:bg-red-50"
-                      title="Delete line"
+                      title={t('voiceEditor.deleteLine')}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -248,7 +250,7 @@ export default function DialogEditor({
                 <textarea
                   value={line.content}
                   onChange={(e) => onUpdateLine(line.id, e.target.value)}
-                  placeholder={`Enter dialog for ${speaker?.displayName}...`}
+                  placeholder={`${t('voiceEditor.enterDialogFor')} ${speaker?.displayName}...`}
                   className="w-full p-3 border border-gray-300 rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-700"
                   rows={3}
                 />

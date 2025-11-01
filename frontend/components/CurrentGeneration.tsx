@@ -3,12 +3,14 @@
 import React from 'react';
 import { useGeneration } from '@/lib/GenerationContext';
 import { useProject } from '@/lib/ProjectContext';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { api } from '@/lib/api';
 import { InferencePhase, getOffloadingConfig, getOffloadingMetrics } from '@/types/generation';
 
 function CurrentGeneration() {
   const { currentGeneration } = useGeneration();
   const { currentProject } = useProject();
+  const { t } = useLanguage();
 
   if (!currentGeneration) {
     return null;
@@ -34,17 +36,17 @@ function CurrentGeneration() {
   const getStatusLabel = (status: InferencePhase): string => {
     switch (status) {
       case InferencePhase.COMPLETED:
-        return 'Completed';
+        return t('generation.statusCompleted');
       case InferencePhase.FAILED:
-        return 'Failed';
+        return t('generation.statusFailed');
       case InferencePhase.PENDING:
-        return 'Pending';
+        return t('generation.statusPending');
       case InferencePhase.PREPROCESSING:
-        return 'Preprocessing';
+        return t('generation.statusPreprocessing');
       case InferencePhase.INFERENCING:
-        return 'Inferencing';
+        return t('generation.statusInferencing');
       case InferencePhase.SAVING_AUDIO:
-        return 'Saving Audio';
+        return t('generation.statusSavingAudio');
       default:
         return status;
     }
@@ -69,11 +71,11 @@ function CurrentGeneration() {
     if (currentGeneration.status === InferencePhase.PREPROCESSING && details) {
       return (
         <div className="space-y-3">
-          <label className="text-sm font-medium opacity-75 block">Preprocessing Information</label>
+          <label className="text-sm font-medium opacity-75 block">{t('generation.preprocessingInformation')}</label>
 
           {details.unique_speaker_names && (
             <div className="bg-white bg-opacity-50 rounded p-3">
-              <p className="text-xs font-medium mb-1">Speakers ({details.unique_speaker_names.length})</p>
+              <p className="text-xs font-medium mb-1">{t('generation.speakers')} ({details.unique_speaker_names.length})</p>
               <div className="flex flex-wrap gap-1">
                 {details.unique_speaker_names.map((speaker: string, idx: number) => (
                   <span key={idx} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">
@@ -86,7 +88,7 @@ function CurrentGeneration() {
 
           {details.scripts && (
             <div className="bg-white bg-opacity-50 rounded p-3">
-              <p className="text-xs font-medium mb-1">Dialog Lines: {details.scripts.length}</p>
+              <p className="text-xs font-medium mb-1">{t('generation.dialogLines')}: {details.scripts.length}</p>
             </div>
           )}
         </div>
@@ -110,7 +112,7 @@ function CurrentGeneration() {
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
                   </svg>
-                  <label className="text-sm font-semibold">Generated Audio</label>
+                  <label className="text-sm font-semibold">{t('generation.generatedAudio')}</label>
                 </div>
                 <a
                   href={audioUrl + '?download=true'}
@@ -120,7 +122,7 @@ function CurrentGeneration() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Download
+                  {t('generation.download')}
                 </a>
               </div>
               <audio
@@ -133,7 +135,7 @@ function CurrentGeneration() {
               </audio>
               <div className="mt-2 flex items-center gap-4 text-xs opacity-75">
                 {details.audio_duration_seconds && (
-                  <span>Duration: {details.audio_duration_seconds.toFixed(2)}s</span>
+                  <span>{t('generation.duration')}: {details.audio_duration_seconds.toFixed(2)}s</span>
                 )}
                 {currentGeneration.output_filename && (
                   <span className="font-mono truncate">{currentGeneration.output_filename}</span>
@@ -142,36 +144,36 @@ function CurrentGeneration() {
             </div>
           )}
 
-          <label className="text-sm font-medium opacity-75 block">Generation Statistics</label>
+          <label className="text-sm font-medium opacity-75 block">{t('generation.generationStatistics')}</label>
 
           {/* Performance Summary */}
           {(details.generation_time !== undefined || details.audio_duration_seconds !== undefined || details.real_time_factor !== undefined) && (
             <div className="bg-white bg-opacity-90 rounded p-4">
-              <p className="text-xs font-medium mb-3 opacity-75">⚡ Performance Metrics</p>
+              <p className="text-xs font-medium mb-3 opacity-75">⚡ {t('generation.performanceMetrics')}</p>
               <div className="grid grid-cols-3 gap-3">
                 {details.generation_time !== undefined && (
                   <div className="text-center">
                     <p className="text-2xl font-bold">{details.generation_time.toFixed(2)}s</p>
-                    <p className="text-xs opacity-75 mt-1">Generation Time</p>
+                    <p className="text-xs opacity-75 mt-1">{t('generation.generationTime')}</p>
                   </div>
                 )}
                 {details.audio_duration_seconds !== undefined && (
                   <div className="text-center">
                     <p className="text-2xl font-bold">{details.audio_duration_seconds.toFixed(2)}s</p>
-                    <p className="text-xs opacity-75 mt-1">Audio Duration</p>
+                    <p className="text-xs opacity-75 mt-1">{t('generation.audioDuration')}</p>
                   </div>
                 )}
                 {details.real_time_factor !== undefined && (
                   <div className="text-center">
                     <p className="text-2xl font-bold">{details.real_time_factor.toFixed(2)}×</p>
-                    <p className="text-xs opacity-75 mt-1">Real-Time Factor</p>
+                    <p className="text-xs opacity-75 mt-1">{t('generation.realTimeFactor')}</p>
                   </div>
                 )}
               </div>
               {details.number_of_segments !== undefined && (
                 <div className="mt-3 pt-3 border-t border-current border-opacity-20 text-center">
                   <p className="text-xs opacity-75">
-                    Generated <span className="font-bold">{details.number_of_segments}</span> segments
+                    {t('generation.generatedSegments').replace('{count}', details.number_of_segments.toString())}
                   </p>
                 </div>
               )}
@@ -180,24 +182,24 @@ function CurrentGeneration() {
 
           {/* Token Statistics */}
           <div className="bg-white bg-opacity-90 rounded p-4">
-            <p className="text-xs font-medium mb-3 opacity-75">🔢 Token Statistics</p>
+            <p className="text-xs font-medium mb-3 opacity-75">🔢 {t('generation.tokenStatistics')}</p>
             <div className="grid grid-cols-3 gap-3">
               {details.prefilling_tokens !== undefined && (
                 <div className="text-center">
                   <p className="text-xl font-bold">{details.prefilling_tokens.toLocaleString()}</p>
-                  <p className="text-xs opacity-75 mt-1">Prefilling</p>
+                  <p className="text-xs opacity-75 mt-1">{t('generation.prefilling')}</p>
                 </div>
               )}
               {details.generated_tokens !== undefined && (
                 <div className="text-center">
                   <p className="text-xl font-bold">{details.generated_tokens.toLocaleString()}</p>
-                  <p className="text-xs opacity-75 mt-1">Generated</p>
+                  <p className="text-xs opacity-75 mt-1">{t('generation.generated')}</p>
                 </div>
               )}
               {details.total_tokens !== undefined && (
                 <div className="text-center">
                   <p className="text-xl font-bold">{details.total_tokens.toLocaleString()}</p>
-                  <p className="text-xs opacity-75 mt-1">Total Tokens</p>
+                  <p className="text-xs opacity-75 mt-1">{t('generation.totalTokens')}</p>
                 </div>
               )}
             </div>
@@ -206,7 +208,7 @@ function CurrentGeneration() {
           {/* Speaker Information */}
           {details.unique_speaker_names && (
             <div className="bg-white bg-opacity-90 rounded p-3">
-              <p className="text-xs font-medium mb-2 opacity-75">🎤 Speakers Used ({details.unique_speaker_names.length})</p>
+              <p className="text-xs font-medium mb-2 opacity-75">🎤 {t('generation.speakersUsed').replace('{count}', details.unique_speaker_names.length.toString())}</p>
               <div className="flex flex-wrap gap-1">
                 {details.unique_speaker_names.map((speaker: string, idx: number) => (
                   <span key={idx} className="px-3 py-1.5 bg-white rounded-full text-xs font-medium border border-current border-opacity-30">
@@ -220,7 +222,7 @@ function CurrentGeneration() {
           {/* Output File Path */}
           {details.output_audio_path && (
             <div className="bg-white bg-opacity-90 rounded p-3">
-              <p className="text-xs font-medium mb-1 opacity-75">📁 Output Path</p>
+              <p className="text-xs font-medium mb-1 opacity-75">📁 {t('generation.outputPath')}</p>
               <p className="text-xs font-mono break-all opacity-75">{details.output_audio_path}</p>
             </div>
           )}
@@ -232,7 +234,7 @@ function CurrentGeneration() {
     if (currentGeneration.status === InferencePhase.FAILED && details) {
       return (
         <div className="space-y-3">
-          <label className="text-sm font-medium opacity-75 block">Error Information</label>
+          <label className="text-sm font-medium opacity-75 block">{t('generation.errorInformation')}</label>
           <div className="bg-red-50 bg-opacity-50 rounded p-3">
             <pre className="text-xs whitespace-pre-wrap text-red-900">
               {details.error || JSON.stringify(details, null, 2)}
@@ -246,7 +248,7 @@ function CurrentGeneration() {
     if (details && Object.keys(details).length > 0) {
       return (
         <div className="space-y-3">
-          <label className="text-sm font-medium opacity-75 block">Additional Details</label>
+          <label className="text-sm font-medium opacity-75 block">{t('generation.additionalDetails')}</label>
           <div className="bg-white bg-opacity-50 rounded p-3 max-h-48 overflow-y-auto">
             <pre className="text-xs whitespace-pre-wrap">
               {JSON.stringify(details, null, 2)}
@@ -262,11 +264,11 @@ function CurrentGeneration() {
   return (
     <div className={`border-2 rounded-lg p-6 ${getStatusColor(currentGeneration.status)}`}>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Current Generation</h2>
+        <h2 className="text-xl font-semibold">{t('generation.currentGeneration')}</h2>
         {isActive && (
           <div className="flex items-center gap-2">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-current"></div>
-            <span className="text-sm font-medium">Processing...</span>
+            <span className="text-sm font-medium">{t('generation.status')}...</span>
           </div>
         )}
       </div>
@@ -274,26 +276,26 @@ function CurrentGeneration() {
       <div className="space-y-4">
         {/* Status */}
         <div>
-          <label className="text-sm font-medium opacity-75">Status</label>
+          <label className="text-sm font-medium opacity-75">{t('generation.status')}</label>
           <p className="text-lg font-semibold">{getStatusLabel(currentGeneration.status)}</p>
         </div>
 
         {/* Session ID */}
         <div>
-          <label className="text-sm font-medium opacity-75">Session ID</label>
+          <label className="text-sm font-medium opacity-75">{t('generation.sessionId')}</label>
           <p className="text-sm">{currentGeneration.session_id}</p>
         </div>
 
         {/* Request ID */}
         <div>
-          <label className="text-sm font-medium opacity-75">Request ID</label>
+          <label className="text-sm font-medium opacity-75">{t('generation.requestId')}</label>
           <p className="text-sm font-mono">{currentGeneration.request_id}</p>
         </div>
 
         {/* Progress Bar (if inferencing) */}
         {isActive && progressPercentage !== null && (
           <div>
-            <label className="text-sm font-medium opacity-75 mb-2 block">Progress</label>
+            <label className="text-sm font-medium opacity-75 mb-2 block">{t('generation.progress')}</label>
             <div className="w-full bg-white bg-opacity-50 rounded-full h-4">
               <div
                 className="bg-current h-4 rounded-full transition-all duration-300 flex items-center justify-center"
@@ -306,7 +308,7 @@ function CurrentGeneration() {
             </div>
             {currentStep !== null && totalSteps !== null && (
               <p className="text-xs mt-1 opacity-75">
-                Step {currentStep} of {totalSteps}
+                {t('generation.status')} {currentStep} {t('generation.of')} {totalSteps}
               </p>
             )}
           </div>
@@ -315,19 +317,19 @@ function CurrentGeneration() {
         {/* Model Settings */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium opacity-75">Model Type</label>
+            <label className="text-sm font-medium opacity-75">{t('generation.modelType')}</label>
             <p className="text-sm">{currentGeneration.model_dtype}</p>
           </div>
           <div>
-            <label className="text-sm font-medium opacity-75">CFG Scale</label>
+            <label className="text-sm font-medium opacity-75">{t('generation.cfgScale')}</label>
             <p className="text-sm">{currentGeneration.cfg_scale ?? 'N/A'}</p>
           </div>
           <div>
-            <label className="text-sm font-medium opacity-75">Seeds</label>
+            <label className="text-sm font-medium opacity-75">{t('generation.seeds')}</label>
             <p className="text-sm">{currentGeneration.seeds}</p>
           </div>
           <div>
-            <label className="text-sm font-medium opacity-75">Attention</label>
+            <label className="text-sm font-medium opacity-75">{t('generation.attention')}</label>
             <p className="text-sm">{currentGeneration.attn_implementation ?? 'N/A'}</p>
           </div>
         </div>
@@ -344,22 +346,22 @@ function CurrentGeneration() {
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
                     <path fillRule="evenodd" d="M7.84 1.804A1 1 0 018.82 1h2.36a1 1 0 01.98.804l.331 1.652a6.993 6.993 0 011.929 1.115l1.598-.54a1 1 0 011.186.447l1.18 2.044a1 1 0 01-.205 1.251l-1.267 1.113a7.047 7.047 0 010 2.228l1.267 1.113a1 1 0 01.206 1.25l-1.18 2.045a1 1 0 01-1.187.447l-1.598-.54a6.993 6.993 0 01-1.929 1.115l-.33 1.652a1 1 0 01-.98.804H8.82a1 1 0 01-.98-.804l-.331-1.652a6.993 6.993 0 01-1.929-1.115l-1.598.54a1 1 0 01-1.186-.447l-1.18-2.044a1 1 0 01.205-1.251l1.267-1.114a7.05 7.05 0 010-2.227L1.821 7.773a1 1 0 01-.206-1.25l1.18-2.045a1 1 0 011.187-.447l1.598.54A6.993 6.993 0 017.51 3.456l.33-1.652zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
                   </svg>
-                  <span className="text-sm font-medium">Offloading: Enabled</span>
+                  <span className="text-sm font-medium">{t('generation.offloading')}: {t('generation.offloadingEnabled')}</span>
                 </div>
                 <div className="text-sm ml-7">
                   {offloadingConfig.mode === 'preset' && offloadingConfig.preset && (
                     <p className="capitalize opacity-75">
-                      {offloadingConfig.preset} preset
+                      {t(`generation.offloading${offloadingConfig.preset.charAt(0).toUpperCase() + offloadingConfig.preset.slice(1)}`)}
                     </p>
                   )}
                   {offloadingConfig.mode === 'manual' && offloadingConfig.num_gpu_layers !== undefined && (
                     <p className="opacity-75">
-                      {offloadingConfig.num_gpu_layers} GPU layers
+                      {offloadingConfig.num_gpu_layers} {t('generation.gpuLayers')}
                     </p>
                   )}
                   {offloadingMetrics && (
                     <p className="mt-1 opacity-75">
-                      Transfer overhead: {offloadingMetrics.overhead_percentage.toFixed(1)}%
+                      {t('generation.transferOverhead')}: {offloadingMetrics.overhead_percentage.toFixed(1)}%
                     </p>
                   )}
                 </div>
@@ -374,8 +376,8 @@ function CurrentGeneration() {
 
         {/* Timestamps */}
         <div className="text-xs opacity-75 pt-2 border-t border-current border-opacity-20">
-          <p>Created: {new Date(currentGeneration.created_at).toLocaleString()}</p>
-          <p>Updated: {new Date(currentGeneration.updated_at).toLocaleString()}</p>
+          <p>{t('generation.created')}: {new Date(currentGeneration.created_at).toLocaleString()}</p>
+          <p>{t('generation.updated')}: {new Date(currentGeneration.updated_at).toLocaleString()}</p>
         </div>
       </div>
     </div>

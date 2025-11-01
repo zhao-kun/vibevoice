@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { SessionProvider } from '@/lib/SessionContext';
 import { GenerationProvider, useGeneration } from '@/lib/GenerationContext';
 import GenerationHistory from '@/components/GenerationHistory';
@@ -12,6 +13,7 @@ import GenerationForm from '@/components/GenerationForm';
 function GenerateVoiceContent() {
   const { currentProject } = useProject();
   const { currentGeneration } = useGeneration();
+  const { t } = useLanguage();
 
   // Safety check - should not happen due to wrapper logic, but prevents errors
   if (!currentProject) {
@@ -23,7 +25,7 @@ function GenerateVoiceContent() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="flex items-center space-x-2 mb-1">
-          <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t('generation.pageTitle')}</h1>
           {currentProject && (
             <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
               {currentProject.name}
@@ -31,7 +33,7 @@ function GenerateVoiceContent() {
           )}
         </div>
         <p className="text-sm text-gray-500">
-          Generate speech from your scripts and voice samples
+          {t('generation.pageSubtitle')}
         </p>
       </header>
 
@@ -57,24 +59,24 @@ function GenerateVoiceContent() {
 
             {/* Info Card */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-blue-900 mb-2">How it works</h3>
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">{t('generation.howItWorks')}</h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>1. Select a dialog session from your project</li>
-                <li>2. Configure generation parameters (model type, CFG scale, seed)</li>
-                <li>3. Click &ldquo;Start Generation&rdquo; to begin processing</li>
-                <li>4. Monitor progress in the current generation panel</li>
-                <li>5. Download completed audio from the history list</li>
+                <li>{t('generation.step1')}</li>
+                <li>{t('generation.step2')}</li>
+                <li>{t('generation.step3')}</li>
+                <li>{t('generation.step4')}</li>
+                <li>{t('generation.step5')}</li>
               </ul>
             </div>
 
             {/* Technical Info */}
             <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Model Information</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">{t('generation.modelInformation')}</h3>
               <div className="text-xs text-gray-700 space-y-1">
-                <p><strong>float8_e4m3fn:</strong> Optimized 8-bit model, Load faster with less memory and slow inferencing</p>
-                <p><strong>bf16:</strong> Full precision model, higher quality but slower loading and faster inferencing</p>
-                <p><strong>CFG Scale:</strong> Controls adherence to input (1.0-3.0 recommended)</p>
-                <p><strong>Seed:</strong> Random seed for reproducible results</p>
+                <p><strong>float8_e4m3fn:</strong> {t('generation.float8Info')}</p>
+                <p><strong>bf16:</strong> {t('generation.bf16Info')}</p>
+                <p><strong>CFG Scale:</strong> {t('generation.cfgScaleInfo')}</p>
+                <p><strong>Seed:</strong> {t('generation.seedInfo')}</p>
               </div>
             </div>
           </div>
@@ -87,6 +89,7 @@ function GenerateVoiceContent() {
 export default function GenerateVoicePage() {
   const router = useRouter();
   const { currentProject, loading } = useProject();
+  const { t } = useLanguage();
 
   // Redirect to home page if no project is selected (after loading completes)
   useEffect(() => {
@@ -109,15 +112,15 @@ export default function GenerateVoicePage() {
       ) : (
         <>
           <header className="bg-white border-b border-gray-200 px-6 py-4">
-            <h1 className="text-2xl font-bold text-gray-900">Generate Voice</h1>
-            <p className="text-sm text-gray-500 mt-1">Generate speech from your scripts and voice samples</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('generation.pageTitle')}</h1>
+            <p className="text-sm text-gray-500 mt-1">{t('generation.pageSubtitle')}</p>
           </header>
 
           <div className="flex-1 flex items-center justify-center bg-gray-50">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-500">
-                {loading ? 'Loading project...' : 'Redirecting to project selection...'}
+                {loading ? t('generation.loadingProject') : t('generation.redirecting')}
               </p>
             </div>
           </div>
