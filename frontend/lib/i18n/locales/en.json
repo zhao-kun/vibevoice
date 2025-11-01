@@ -43,7 +43,8 @@
     "voiceEditor": "Voice Contents Editor",
     "generateVoice": "Generate Voice",
     "viewRunningTask": "View running generation task",
-    "noRunningTasks": "No running tasks"
+    "noRunningTasks": "No running tasks",
+    "githubTooltip": "Star & Fork on GitHub"
   },
   "project": {
     "selectProject": "Select a project to get started",

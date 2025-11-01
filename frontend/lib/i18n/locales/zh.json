@@ -43,7 +43,8 @@
     "voiceEditor": "语音内容编辑器",
     "generateVoice": "生成语音",
     "viewRunningTask": "查看正在运行的生成任务",
-    "noRunningTasks": "无正在运行的任务"
+    "noRunningTasks": "无正在运行的任务",
+    "githubTooltip": "在 GitHub 上给项目点赞和 Fork"
   },
   "project": {
     "selectProject": "选择一个项目开始",
