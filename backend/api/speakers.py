@@ -103,7 +103,6 @@ def add_speaker(project_id):
         project_id: Project identifier
 
     Form data:
-        name: Speaker name (required)
         description: Speaker description (optional)
         voice_file: Audio file (required)
 
@@ -119,15 +118,8 @@ def add_speaker(project_id):
             }), 404
 
         # Get form data
-        name = request.form.get('name')
         description = request.form.get('description', '')
         voice_file = request.files.get('voice_file')
-
-        if not name:
-            return jsonify({
-                'error': t('errors.bad_request'),
-                'message': t('errors.validation_error')
-            }), 400
 
         if not voice_file:
             return jsonify({
@@ -135,7 +127,7 @@ def add_speaker(project_id):
                 'message': t('errors.file_upload_error')
             }), 400
 
-        speaker = service.add_speaker(name, description, voice_file)
+        speaker = service.add_speaker(description, voice_file)
 
         return jsonify(speaker.to_dict()), 201
 
@@ -162,7 +154,6 @@ def update_speaker(project_id, speaker_id):
 
     Request body:
         {
-            "name": "Updated Name",
             "description": "Updated description"
         }
 
@@ -184,10 +175,9 @@ def update_speaker(project_id, speaker_id):
                 'message': 'Request body must be JSON'
             }), 400
 
-        name = data.get('name')
         description = data.get('description')
 
-        speaker = service.update_speaker(speaker_id, name, description)
+        speaker = service.update_speaker(speaker_id, description)
         if not speaker:
             return jsonify({
                 'error': t('errors.not_found'),

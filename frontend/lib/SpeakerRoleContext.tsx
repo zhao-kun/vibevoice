@@ -29,7 +29,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
     return {
       id: speaker.speaker_id, // Use speaker_id as the unique identifier
       speakerId: speaker.speaker_id,
-      name: speaker.name,
       description: speaker.description,
       voiceFilename: speaker.voice_filename,
       voiceFile: null, // File uploads handled separately
@@ -70,7 +69,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
     const newRole: SpeakerRole = {
       id: `temp-${Date.now()}`, // Temporary ID
       speakerId: `Speaker ${speakerRoles.length + 1}`,
-      name: `Speaker ${speakerRoles.length + 1}`,
       description: "",
       voiceFilename: null,
       voiceFile: null,
@@ -95,11 +93,10 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
       throw new Error("Speaker not found");
     }
 
-    // Only sync to backend if it's not a temporary speaker and name or description changed
-    if (!role.id.startsWith('temp-') && (updates.name !== undefined || updates.description !== undefined)) {
+    // Only sync to backend if it's not a temporary speaker and description changed
+    if (!role.id.startsWith('temp-') && updates.description !== undefined) {
       try {
-        const updateData: { name?: string; description?: string } = {};
-        if (updates.name !== undefined) updateData.name = updates.name;
+        const updateData: { description?: string } = {};
         if (updates.description !== undefined) updateData.description = updates.description;
 
         const updatedSpeaker = await api.updateSpeaker(projectId, speakerId, updateData);
@@ -167,7 +164,6 @@ export function SpeakerRoleProvider({ children, projectId }: { children: React.R
       if (isTemporary) {
         // Create a new speaker on the backend
         await api.createSpeaker(projectId, {
-          name: currentRole.name,
           description: currentRole.description,
           voice_file: file,
         });

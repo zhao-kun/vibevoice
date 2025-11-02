@@ -13,8 +13,7 @@ export interface SpeakerData {
 // Speaker Role Management Types
 export interface SpeakerRole {
   id: string; // unique identifier for the role (for frontend UI)
-  speakerId: string; // "Speaker 1", "Speaker 2", etc. (matches backend speaker_id)
-  name: string; // speaker name (matches backend)
+  speakerId: string; // "Speaker 1", "Speaker 2", etc. (matches backend speaker_id, also serves as display name)
   description: string; // user description of the voice
   voiceFilename: string | null; // backend filename (null if no file uploaded)
   voiceFile: File | null; // local file being uploaded (frontend only)

@@ -10,7 +10,9 @@ export default function SessionManager() {
   const { t } = useLanguage();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [editingSession, setEditingSession] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [newSessionName, setNewSessionName] = useState("");
   const [newSessionDescription, setNewSessionDescription] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
@@ -57,17 +59,31 @@ export default function SessionManager() {
     }
   };
 
-  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(t('session.deleteConfirm'))) {
-      setLocalError(null);
-      try {
-        await deleteSession(sessionId);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : t('session.deleteError'));
-        toast.error(err instanceof Error ? err.message : t('session.deleteError'));
-      }
+    setDeleteTargetId(sessionId);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTargetId) return;
+
+    setLocalError(null);
+    try {
+      await deleteSession(deleteTargetId);
+      toast.success(t('session.deleteSuccess'));
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : t('session.deleteError'));
+      toast.error(err instanceof Error ? err.message : t('session.deleteError'));
+    } finally {
+      setShowDeleteDialog(false);
+      setDeleteTargetId(null);
     }
+  };
+
+  const handleCancelDelete = () => {
+    setShowDeleteDialog(false);
+    setDeleteTargetId(null);
   };
 
   return (
@@ -127,7 +143,7 @@ export default function SessionManager() {
                   </button>
                   {sessions.length > 1 && (
                     <button
-                      onClick={(e) => handleDeleteSession(session.id, e)}
+                      onClick={(e) => handleDeleteClick(session.id, e)}
                       className={`p-1 rounded hover:bg-red-100 ${isActive ? "text-white hover:text-red-600" : "text-gray-400 hover:text-red-600"}`}
                       title={t('session.deleteSessionTooltip')}
                     >
@@ -274,6 +290,32 @@ export default function SessionManager() {
                 className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? t('session.updating') : t('session.update')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteDialog && (
+        <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-[200] p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">{t('common.confirm')}</h3>
+            <p className="text-gray-600 mb-4">
+              {t('session.deleteConfirm')}
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelDelete}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                {t('common.delete')}
               </button>
             </div>
           </div>

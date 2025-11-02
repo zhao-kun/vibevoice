@@ -8,6 +8,7 @@ export interface SpeakerInfo {
   id: string;
   name: string;
   displayName: string;
+  description?: string;
 }
 
 export interface DialogSession {

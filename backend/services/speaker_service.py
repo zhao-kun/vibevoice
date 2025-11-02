@@ -131,12 +131,11 @@ class SpeakerService:
                 return speaker
         return None
 
-    def add_speaker(self, name: str, description: str, voice_file: FileStorage) -> SpeakerRole:
+    def add_speaker(self, description: str, voice_file: FileStorage) -> SpeakerRole:
         """
         Add a new speaker role with voice file
 
         Args:
-            name: Speaker name
             description: Speaker description
             voice_file: Uploaded voice file
 
@@ -147,9 +146,6 @@ class SpeakerService:
             ValueError: If validation fails
             RuntimeError: If operation fails
         """
-        if not name or not name.strip():
-            raise ValueError("Speaker name cannot be empty")
-
         if not voice_file or not voice_file.filename:
             raise ValueError("Voice file is required")
 
@@ -173,7 +169,7 @@ class SpeakerService:
             voice_file.save(str(file_path))
 
             # Create speaker role
-            speaker = SpeakerRole.create(speaker_id, name.strip(), description.strip(), unique_filename)
+            speaker = SpeakerRole.create(speaker_id, description.strip() if description else '', unique_filename)
 
             # Update metadata atomically
             speakers.append(speaker)
@@ -188,14 +184,12 @@ class SpeakerService:
                 file_path.unlink()
             raise RuntimeError(f"Failed to add speaker: {str(e)}")
 
-    def update_speaker(self, speaker_id: str, name: Optional[str] = None,
-                       description: Optional[str] = None) -> Optional[SpeakerRole]:
+    def update_speaker(self, speaker_id: str, description: Optional[str] = None) -> Optional[SpeakerRole]:
         """
         Update speaker role metadata (not the voice file)
 
         Args:
             speaker_id: Speaker identifier
-            name: New speaker name (optional)
             description: New description (optional)
 
         Returns:
@@ -207,7 +201,7 @@ class SpeakerService:
         speaker_found = False
         for speaker in speakers:
             if speaker.speaker_id == speaker_id:
-                speaker.update(name=name, description=description)
+                speaker.update(description=description)
                 speaker_found = True
                 break
 

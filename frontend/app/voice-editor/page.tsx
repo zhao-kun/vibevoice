@@ -28,7 +28,8 @@ function VoiceEditorContent() {
     return speakerRoles.map(role => ({
       id: role.speakerId,
       name: role.speakerId,
-      displayName: role.name || role.speakerId,
+      displayName: role.speakerId,
+      description: role.description,
     }));
   }, [speakerRoles]);
 

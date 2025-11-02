@@ -27,7 +27,6 @@ export interface Project {
 
 export interface Speaker {
   speaker_id: string;
-  name: string;
   description: string;
   voice_filename: string;
   created_at: string;
@@ -139,13 +138,11 @@ class ApiClient {
   async createSpeaker(
     projectId: string,
     data: {
-      name: string;
       description?: string;
       voice_file: File;
     }
   ): Promise<Speaker> {
     const formData = new FormData();
-    formData.append('name', data.name);
     if (data.description) {
       formData.append('description', data.description);
     }
@@ -171,7 +168,7 @@ class ApiClient {
   async updateSpeaker(
     projectId: string,
     speakerId: string,
-    data: { name?: string; description?: string }
+    data: { description?: string }
   ): Promise<Speaker> {
     return this.fetch(
       `/projects/${encodeURIComponent(projectId)}/speakers/${encodeURIComponent(speakerId)}`,

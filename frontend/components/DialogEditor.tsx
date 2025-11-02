@@ -187,17 +187,21 @@ export default function DialogEditor({
             const speaker = getSpeakerById(line.speakerId);
             const isFirst = index === 0;
             const isLast = index === dialogLines.length - 1;
+            // Extract number from speaker ID (e.g., "Speaker 1" -> "1")
+            const speakerNumber = speaker?.id.replace(/^Speaker\s+/i, '') || '';
 
             return (
               <div key={line.id} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                      {speaker?.id}
+                    <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
+                      {speakerNumber}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="font-medium text-gray-800">{speaker?.displayName}</div>
-                      <div className="text-xs text-gray-500">{t('voiceEditor.lineNumber')} {index + 1}</div>
+                      <div className="text-xs text-gray-500">
+                        {speaker?.description ? speaker.description : `${t('voiceEditor.lineNumber')} ${index + 1}`}
+                      </div>
                     </div>
                   </div>
 
