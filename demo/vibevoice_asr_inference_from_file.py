@@ -261,15 +261,13 @@ def print_result(result: Dict[str, Any]):
     print(f"\nFile: {result['file']}")
     print(f"Generation Time: {result['generation_time']:.2f}s")
     print("\n--- Raw Output ---")
-    print(result['raw_text'][:500] + "..." if len(result['raw_text']) > 500 else result['raw_text'])
+    print(result['raw_text'])
 
     if result['segments']:
         print(f"\n--- Structured Output ({len(result['segments'])} segments) ---")
-        for seg in result['segments'][:50]:  # Show first 50 segments
+        for seg in result['segments']:
             print(f"[{seg.get('start_time', 'N/A')} - {seg.get('end_time', 'N/A')}] "
-                  f"Speaker {seg.get('speaker_id', 'N/A')}: {seg.get('text', '')}...")
-        if len(result['segments']) > 50:
-            print(f"  ... and {len(result['segments']) - 50} more segments")
+                  f"Speaker {seg.get('speaker_id', 'N/A')}: {seg.get('text', '')}")
 
 
 def load_dataset_and_concatenate(
