@@ -20,6 +20,7 @@ from functools import wraps
 
 from vibevoice.modular.modeling_vibevoice_asr import VibeVoiceASRForConditionalGeneration
 from vibevoice.processor.vibevoice_asr_processor import VibeVoiceASRProcessor
+from config.configuration_vibevoice import VibeVoiceASRConfig, DEFAULT_ASR_CONFIG
 
 
 class VibeVoiceASRBatchInference:
@@ -30,7 +31,8 @@ class VibeVoiceASRBatchInference:
         model_path: str, 
         device: str = "cuda", 
         dtype: torch.dtype = torch.bfloat16,
-        attn_implementation: str = "flash_attention_2"
+        attn_implementation: str = "flash_attention_2",
+        config_path: str = None
     ):
         """
         Initialize the ASR batch inference pipeline.
@@ -44,21 +46,26 @@ class VibeVoiceASRBatchInference:
         print(f"Loading VibeVoice ASR model from {model_path}")
 
         # Load processor
-        self.processor = VibeVoiceASRProcessor.from_pretrained(
-            model_path,
-            language_model_pretrained_name="Qwen/Qwen2.5-7B"
-        )
+        self.processor = VibeVoiceASRProcessor.from_pretrained(model_path)
+        config_dict = None
+        if config_path is not None:
+            try:
+                config_dict = json.loads(Path(config_path).read_text())
+            except Exception as e:
+                print(f"Error loading config from {config_path}: {e}")
+        
+        if config_dict is None:
+            config_dict = DEFAULT_ASR_CONFIG
+            
 
+        config = VibeVoiceASRConfig.from_dict(config_dict,
+                                              torch_dtype=dtype,
+                                              device_map="cuda",
+                                              attn_implementation=attn_implementation)
         # Load model with specified attention implementation
         print(f"Using attention implementation: {attn_implementation}")
-        self.model = VibeVoiceASRForConditionalGeneration.from_pretrained(
-            model_path,
-            dtype=dtype,
-            device_map=device if device == "auto" else None,
-            attn_implementation=attn_implementation,
-            trust_remote_code=True
-        )
 
+        self.model = VibeVoiceASRForConditionalGeneration.from_pretrain(model_path, config)
         if device != "auto":
             self.model = self.model.to(device)
 
@@ -474,8 +481,8 @@ def main():
     parser.add_argument(
         "--attn_implementation",
         type=str,
-        default="flash_attention_2",
-        help="Attention implementation to use (default: flash_attention_2)"
+        default="sdpa",
+        help="Attention implementation to use (default: sdpa)"
     )
 
     args = parser.parse_args()

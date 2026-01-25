@@ -1,26 +1,24 @@
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Callable, Any
 import torch
 import torch.nn as nn
 
-from modular_vibevoice_qwen import QwenModel, QwenConfig
-
+from accelerate import init_empty_weights
+from transformers.generation import GenerationConfig, LogitsProcessor, LogitsProcessorList, StoppingCriteriaList
+from transformers.generation.utils import GenerateOutput, GenerationMixin
 from transformers.modeling_outputs import CausalLMOutput, BaseModelOutputWithPast
 from transformers import modeling_utils
 
-from .modular_vibevoice_tokenizer import (
-    VibeVoiceSemanticTokenizerModel,
-    VibeVoiceAcousticTokenizerModel,
-    VibeVoiceTokenizerStreamingCache,
-    VibeVoiceTokenizerEncoderOutput
-)
-
-from config.configuration_vibevoice import VibeVoiceASRConfig
-from .modeling_vibevoice import (
-    VibeVoiceCausalLMOutputWithPast,
-    SpeechConnector
-)
-
+from util.model_utils import merge_lora_weights
 from util.logger import get_logger
+from config.configuration_vibevoice import VibeVoiceASRConfig
+
+from .modular_vibevoice_qwen import QwenModel, QwenConfig
+from .modeling_vibevoice import VibeVoiceCausalLMOutputWithPast, SpeechConnector
+from .modular_vibevoice_tokenizer import (
+    VibeVoiceSemanticTokenizerModel, VibeVoiceAcousticTokenizerModel, 
+    VibeVoiceTokenizerStreamingCache, VibeVoiceTokenizerEncoderOutput
+)
+
 
 logger = get_logger(__name__)
 
@@ -62,7 +60,7 @@ class VibeVoiceASRPreTrainedModel(nn.Module):
 # @auto_docstring
 class VibeVoiceASRModel(VibeVoiceASRPreTrainedModel):
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
 
         if hasattr(config, 'torch_dtype') and config.torch_dtype is not None:
             if isinstance(config.torch_dtype, str):
@@ -74,8 +72,8 @@ class VibeVoiceASRModel(VibeVoiceASRPreTrainedModel):
 
         # Initialize Qwen2 model for language modeling
         lm_config = config.decoder_config 
-        config = QwenConfig.from_config(lm_config)
-        self.language_model = QwenModel(config, dtype=dtype)
+        lm_config = QwenConfig.from_config(lm_config)
+        self.language_model = QwenModel(lm_config, dtype=dtype)
 
         # Initialize speech components if needed
         self.acoustic_tokenizer = VibeVoiceAcousticTokenizerModel(config.acoustic_tokenizer_config, dtype=dtype).to(dtype)
@@ -151,16 +149,17 @@ class VibeVoiceASRModel(VibeVoiceASRPreTrainedModel):
             attentions=outputs.attentions,
         )
 
-class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
+class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel, GenerationMixin):
     """
     VibeVoice model for Automatic Speech Recognition (ASR) with language modeling head for conditional generation.
     This class is designed for inference and generation tasks.
     """
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
+    _is_stateful = False
 
     def __init__(self, config):
-        super().__init__(config)
+        super().__init__()
         self.model = VibeVoiceASRModel(config)
         self.vocab_size = config.decoder_config.vocab_size
 
@@ -175,9 +174,13 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
 
         # Initialize lm_head with the correct dtype
         self.lm_head = nn.Linear(config.decoder_config.hidden_size, self.vocab_size, bias=False).to(dtype)
-
+        self.generation_config = GenerationConfig.from_model_config(config)
+        self.config = config
+        self.main_input_name = "input_ids"
+        self.device = torch.device("cuda")
         # Initialize weights and apply final processing
-        self.post_init()
+        #self.post_init()
+    
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()
@@ -510,6 +513,218 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
         # Include any remaining kwargs that might be needed
         model_inputs.update(kwargs)
         return model_inputs
+    
+    # @torch.no_grad()
+    # def generate(
+    #     self,
+    #     inputs: Optional[torch.Tensor] = None,
+    #     generation_config: Optional[GenerationConfig] = None,
+    #     logits_processor: Optional[LogitsProcessorList] = None,
+    #     stopping_criteria: Optional[StoppingCriteriaList] = None,
+    #     prefix_allowed_tokens_fn: Optional[Callable[[int, torch.Tensor], list[int]]] = None,
+    #     synced_gpus: Optional[bool] = None,
+    #     negative_prompt_ids: Optional[torch.Tensor] = None,
+    #     negative_prompt_attention_mask: Optional[torch.Tensor] = None,
+    #     use_model_defaults: Optional[bool] = None,
+    #     custom_generate: Optional[Union[str, Callable]] = None,
+    #     **kwargs,
+    # ) -> Tuple[GenerateOutput, torch.Tensor]:
+    #     generation_config, model_kwargs = self._prepare_for_generation(generation_config, use_model_defaults, **kwargs)
+    #     pass
+
+    # def _prepare_generation_config(
+    #     self,
+    #     generation_config: Optional[GenerationConfig],
+    #     use_model_defaults: Optional[bool] = None,
+    #     **kwargs: Any,
+    # ) -> tuple[GenerationConfig, dict]:
+    #     """
+    #     Prepares the base generation config, then applies any generation configuration options from kwargs. This
+    #     function handles retrocompatibility with respect to configuration files.
+    #     """
+    #     # parameterization priority:
+    #     # kwargs > non-global default values in `generation_config` > `model.generation_config` > GenerationConfig()
+    #     # TODO (joao): per-model generation config classes.
+
+    #     using_model_generation_config = False
+    #     if generation_config is None:
+    #         # legacy: users may modify the model configuration to control generation. To trigger this legacy behavior,
+    #         # the following conditions must be met
+    #         # 1) the generation config must have been created from the model config (`_from_model_config` field);
+    #         # 2) the generation config must have seen no modification since its creation (the hash is the same);
+    #         # 3) there are non-default generation parameters in the model config.
+    #         # 4) the user must have set new generation parameters in the model config.
+    #         if (
+    #             self.generation_config._from_model_config  # 1)
+    #             and self.generation_config._original_object_hash == hash(self.generation_config)  # 2)
+    #             and len(self.config._get_non_default_generation_parameters()) > 0  # 3)
+    #         ):
+    #             new_generation_config = GenerationConfig.from_model_config(self.config)
+    #             if new_generation_config != self.generation_config:  # 4)
+    #                 warnings.warn(
+    #                     "You have modified the pretrained model configuration to control generation. This is a"
+    #                     " deprecated strategy to control generation and will be removed in v5."
+    #                     " Please use and modify the model generation configuration (see"
+    #                     " https://huggingface.co/docs/transformers/generation_strategies#default-text-generation-configuration )",
+    #                     UserWarning,
+    #                 )
+    #                 self.generation_config = new_generation_config
+
+    #         generation_config = self.generation_config
+    #         using_model_generation_config = True
+
+    #         # Related to #40039: prior to this PR, models with sliding window attention were forced to have
+    #         # `cache_implementation="hybrid"` (the static sliding window cache). For these models, we now want to use
+    #         # the dynamic sliding window cache by default, so we UNSET `cache_implementation` if it is a default value.
+    #         # (if we're inside this branch, then it is because we're using default values from the Hub)
+    #         if generation_config.cache_implementation == "hybrid":
+    #             generation_config.cache_implementation = None
+
+    #     # `torch.export.export` usually raises an exception if it is called
+    #     # with ``strict=True``. deepcopy can only be processed if ``strict=False``.
+    #     generation_config = copy.deepcopy(generation_config)
+
+    #     if not using_model_generation_config:
+    #         # If `generation_config` is provided:
+    #         # - `use_model_defaults`: let's fallback ALL default values to the model's generation config
+    #         # - otherwise: legacy behavior, let's just make sure we have the tokens defined
+    #         model_base_version = version.parse(version.parse(self.generation_config.transformers_version).base_version)
+    #         if use_model_defaults is True or (
+    #             use_model_defaults is None and model_base_version >= version.parse("4.50.0")
+    #         ):
+    #             modified_values = {}
+    #             global_default_generation_config = GenerationConfig()
+    #             model_generation_config = self.generation_config
+    #             # we iterate over the model's generation config: it may hold custom keys, which we'll want to copy
+    #             for key, model_gen_config_value in model_generation_config.__dict__.items():
+    #                 if key.startswith("_") or key == "transformers_version":  # metadata
+    #                     continue
+    #                 # Don't set `cache_implementation = 'hybrid'` from the model defaults, see #40135
+    #                 if key == "cache_implementation" and model_generation_config.cache_implementation == "hybrid":
+    #                     continue
+    #                 global_default_value = getattr(global_default_generation_config, key, None)
+    #                 custom_gen_config_value = getattr(generation_config, key, None)
+    #                 if (
+    #                     custom_gen_config_value == global_default_value
+    #                     and model_gen_config_value != global_default_value
+    #                 ):
+    #                     modified_values[key] = model_gen_config_value
+    #                     setattr(generation_config, key, model_gen_config_value)
+    #             # edge case: we may set `temperature=0.0` and `do_sample=False`, but the model defaults to
+    #             # `do_sample=True`
+    #             if generation_config.temperature == 0.0:
+    #                 generation_config.do_sample = False
+    #             if use_model_defaults is None and len(modified_values) > 0:
+    #                 logger.warning_once(
+    #                     f"`generation_config` default values have been modified to match model-specific defaults: "
+    #                     f"{modified_values}. If this is not desired, please set these values explicitly."
+    #                 )
+    #         else:
+    #             if generation_config.bos_token_id is None:
+    #                 generation_config.bos_token_id = self.generation_config.bos_token_id
+    #             if generation_config.eos_token_id is None:
+    #                 generation_config.eos_token_id = self.generation_config.eos_token_id
+    #             if generation_config.pad_token_id is None:
+    #                 generation_config.pad_token_id = self.generation_config.pad_token_id
+    #             if generation_config.decoder_start_token_id is None:
+    #                 generation_config.decoder_start_token_id = self.generation_config.decoder_start_token_id
+
+    #     # Finally, apply any passed kwargs
+    #     model_kwargs = generation_config.update(**kwargs)
+    #     # And keep in model_kwargs variable output controls
+    #     output_attentions = generation_config.output_attentions
+    #     output_hidden_states = generation_config.output_hidden_states
+    #     model_kwargs.update({"output_attentions": output_attentions} if output_attentions else {})
+    #     model_kwargs.update({"output_hidden_states": output_hidden_states} if output_hidden_states else {})
+
+    #     return generation_config, model_kwargs        
+
+    @classmethod
+    def from_pretrain(cls, model_path: str, config: VibeVoiceASRConfig, device="cuda", offload_config=None, lora_model_path: str = None, lora_weight: float = 1.0):
+        """
+        Load model from pretrained weights.
+
+        Args:
+            model_path: Path to model weights (directory or single file)
+            config: Model configuration
+            device: Target device (default: "cuda")
+            offload_config: Optional OffloadConfig for layer offloading
+
+        Returns:
+            Loaded model with optional offloading enabled
+        """
+        import os
+        from util.safetensors_util import MultipleSafetensorLoader, MemoryEfficientSafeOpen
+        from vibevoice.modular.custom_offloading_utils import LayerOffloader
+
+        with init_empty_weights():
+            model = cls(config)
+
+        state_dict = {}
+        if os.path.isdir(model_path):
+            print(f"Begin to load model from model path {model_path}")
+            state_dict = MultipleSafetensorLoader(os.path.join(model_path, "model.safetensors.index.json")).load_dict()
+        else:
+            print(f"Begin to load model from mono model file {model_path}")
+            with MemoryEfficientSafeOpen(model_path) as safe:
+                for key in safe.keys():
+                    state_dict[key] = safe.get_tensor(key)
+
+        model.load_state_dict(state_dict, strict=False, assign=True)
+        print("Model loaded")
+
+        if lora_model_path is not None and lora_model_path != "":
+            model = merge_lora_weights(model, lora_model_path, lora_weight)
+
+        # Setup layer offloading if enabled
+        if offload_config is not None and offload_config.enabled:
+            print(f"Setting up layer offloading: {offload_config.num_layers_on_gpu} layers on GPU")
+
+            # First, move all non-transformer components to GPU
+            # (LayerOffloader only handles transformer layers)
+
+            # Top-level components
+            model.lm_head.to(device)
+
+            # Language model components (except transformer layers)
+            # Convert embedding from Float8 to BF16 to avoid OOM during forward pass
+            if model.model.language_model.embed_tokens.weight.dtype == torch.float8_e4m3fn:
+                print("Converting embedding layer from Float8 to BF16...")
+                # Move to CPU first, convert, then move to GPU
+                model.model.language_model.embed_tokens.cpu()
+                embed_weight_data = model.model.language_model.embed_tokens.weight.data.to(torch.bfloat16)
+                model.model.language_model.embed_tokens.weight.data = embed_weight_data
+
+            model.model.language_model.embed_tokens.to(device)
+            model.model.language_model.norm.to(device)
+
+            # Speech processing components
+            model.model.acoustic_tokenizer.to(device)
+            model.model.semantic_tokenizer.to(device)
+            model.model.acoustic_connector.to(device)
+            model.model.semantic_connector.to(device)
+
+            # Prediction head: conditionally offload to CPU
+            if offload_config.offload_prediction_head:
+                model.model.prediction_head.cpu()
+                print("Prediction head offloaded to CPU (will transfer on-demand)")
+            else:
+                model.model.prediction_head.to(device)
+
+            # Now setup layer offloading for transformer layers only
+            model.offloader = LayerOffloader(
+                language_model=model.model.language_model,
+                config=offload_config,
+                device=torch.device(device),
+                logger=logger
+            )
+            print(f"Layer offloading enabled: {len(model.offloader.offloaded_layers)} layers offloaded")
+        else:
+            # No offloading - move entire model to device
+            model.to(device)
+            print(f"Model moved to {device} (no offloading)")
+
+        return model
 
 
 __all__ = [

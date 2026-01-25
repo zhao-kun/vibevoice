@@ -14,6 +14,7 @@ import torch
 from transformers.tokenization_utils_base import BatchEncoding
 from transformers.utils import TensorType, logging
 from .vibevoice_tokenizer_processor import VibeVoiceTokenizerProcessor, AudioNormalizer
+from util import vibevoice_root_dir
 
 try:
     from .audio_utils import load_audio_use_ffmpeg
@@ -117,17 +118,17 @@ class VibeVoiceASRProcessor:
             with open(config_path, 'r') as f:
                 config = json.load(f)
         else:
-            try:
-                config_file = cached_file(
-                    pretrained_model_name_or_path,
-                    "preprocessor_config.json",
-                    **kwargs
-                )
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not load preprocessor_config.json: {e}")
-                logger.warning("Using default configuration")
+            logger.warning("Using default configuration")
+            config = {
+                "processor_class": "VibeVoiceProcessor",
+                "speech_tok_compress_ratio": 3200,
+                "db_normalize": True,
+                "target_sample_rate": 24000,
+                "normalize_audio": True,
+                "target_dB_FS": -25,
+                "eps": 1e-6,
+                "language_model_pretrained_name": "Qwen/Qwen2.5-7B"
+            }
 
         # Extract parameters
         speech_tok_compress_ratio = config.get("speech_tok_compress_ratio", 3200)
@@ -138,13 +139,9 @@ class VibeVoiceASRProcessor:
         language_model_pretrained_name = config.get("language_model_pretrained_name", None) or kwargs.pop("language_model_pretrained_name", "Qwen/Qwen2.5-1.5B")
         logger.info(f"Loading tokenizer from {language_model_pretrained_name}")
 
-        if 'qwen' in language_model_pretrained_name.lower():
-            tokenizer = VibeVoiceASRTextTokenizerFast.from_pretrained(
-                language_model_pretrained_name,
-                **kwargs
-            )
-        else:
-            raise ValueError(f"Unsupported tokenizer type for {language_model_pretrained_name}")
+        tokenizer = VibeVoiceASRTextTokenizerFast.from_pretrained(os.path.join(vibevoice_root_dir, "tokenizer"),
+                                                                  local_files_only=True,
+                                                                  **kwargs)
 
         # Load audio processor
         audio_processor = VibeVoiceTokenizerProcessor(

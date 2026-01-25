@@ -20,7 +20,7 @@ from util.logger import get_logger
 logger = get_logger(__name__)
 
 @dataclass
-class VibeVoiceCausalLMOutputWithPast:
+class VibeVoiceCausalLMOutputWithPast(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     diffusion_loss: Optional[torch.FloatTensor] = None
     speech_token_num: Optional[int] = None

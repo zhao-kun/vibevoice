@@ -1,6 +1,11 @@
 """ VibeVoice_AcousticTokenizer model configuration"""
+import copy
+import torch
+
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+
+from transformers import PretrainedConfig, __version__
 
 from util.logger import get_logger
 from dataclasses import dataclass
@@ -16,8 +21,91 @@ class InferencePhase:
     FAILED: str = 'failed'
     COMPLETED: str = 'completed'
 
+class ToDictAble:
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serializes this instance to a Python dictionary.
+
+        Returns:
+            `dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance.
+        """
+        output = copy.deepcopy(self.__dict__)
+        if hasattr(self.__class__, "model_type"):
+            output["model_type"] = self.__class__.model_type
+
+        # Transformers version when serializing the model
+        output["transformers_version"] = __version__
+
+        for key, value in output.items():
+            # Deal with nested configs like CLIP
+            if isinstance(value, ToDictAble):
+                value = value.to_dict()
+                del value["transformers_version"]
+
+            output[key] = value
+
+        self._remove_keys_not_serialized(output)
+
+        if hasattr(self, "quantization_config"):
+            output["quantization_config"] = (
+                self.quantization_config.to_dict()
+                if not isinstance(self.quantization_config, dict)
+                else self.quantization_config
+            )
+        self.dict_dtype_to_str(output)
+
+        return output
+
+    def dict_dtype_to_str(self, d: dict[str, Any]) -> None:
+        """
+        Checks whether the passed dictionary and its nested dicts have a *dtype* key and if it's not None,
+        converts torch.dtype to a string of just the type. For example, `torch.float32` get converted into *"float32"*
+        string, which can then be stored in the json format.
+        """
+        if d.get("dtype") is not None:
+            if isinstance(d["dtype"], dict):
+                d["dtype"] = {k: str(v).split(".")[-1] for k, v in d["dtype"].items()}
+            # models like Emu3 can have "dtype" as token in config's vocabulary map,
+            # so we also exclude int type here to avoid error in this special case.
+            elif not isinstance(d["dtype"], (str, int)):
+                d["dtype"] = str(d["dtype"]).split(".")[1]
+        for value in d.values():
+            if isinstance(value, dict):
+                self.dict_dtype_to_str(value)
+
+    def _remove_keys_not_serialized(self, d: dict[str, Any]) -> None:
+        """
+        Checks and removes if there are any keys in the dict that should not be serialized when saving the config.
+        Runs recursive check on the dict, to remove from all sub configs.
+        """
+        if hasattr(self, "quantization_config"):
+            # Pop the `_pre_quantization_dtype` as torch.dtypes are not serializable.
+            _ = d.pop("_pre_quantization_dtype", None)
+
+        if "_auto_class" in d:
+            del d["_auto_class"]
+        if "_output_attentions" in d:
+            d["output_attentions"] = d.pop("_output_attentions")
+        if "_commit_hash" in d:
+            del d["_commit_hash"]
+        if "_attn_implementation_internal" in d:
+            del d["_attn_implementation_internal"]
+        # Do not serialize `base_model_tp_plan` for now
+        if "base_model_tp_plan" in d:
+            del d["base_model_tp_plan"]
+        # Do not serialize `base_model_pp_plan` for now
+        if "base_model_pp_plan" in d:
+            del d["base_model_pp_plan"]
+        for value in d.values():
+            if isinstance(value, dict):
+                self._remove_keys_not_serialized(value)
+    
+    def _get_non_default_generation_parameters(self):
+        return {'placeholder', True}
+
+
 @dataclass
-class QwenConfig:
+class QwenConfig(ToDictAble):
     """
     Configuration class for QWen model.
     """
@@ -76,8 +164,12 @@ class QwenConfig:
     @classmethod
     def from_config(cls, config):
         return cls(**config.__dict__)
+    
+    def get_text_config(self, **kwargs):
+        """Return the text (decoder) config for generation."""
+        return self
 
-class VibeVoiceAcousticTokenizerConfig:
+class VibeVoiceAcousticTokenizerConfig(ToDictAble):
     model_type = "vibevoice_acoustic_tokenizer"
 
     def __init__(
@@ -139,7 +231,7 @@ class VibeVoiceAcousticTokenizerConfig:
         self.decoder_depths = decoder_depths
 
 
-class VibeVoiceSemanticTokenizerConfig:
+class VibeVoiceSemanticTokenizerConfig(ToDictAble):
     model_type = "vibevoice_semantic_tokenizer"
 
     def __init__(
@@ -335,7 +427,7 @@ class VibeVoiceConfig:
         )
 
 
-class VibeVoiceASRConfig:
+class VibeVoiceASRConfig(ToDictAble):
     model_type = "vibevoice"
     is_composition = True
     sub_configs = {
@@ -400,8 +492,42 @@ class VibeVoiceASRConfig:
         # other parameters
         self.acoustic_vae_dim = getattr(self.acoustic_tokenizer_config, 'vae_dim', 64)
         self.semantic_vae_dim = getattr(self.semantic_tokenizer_config, 'vae_dim', 128)
+        self.is_encoder_decoder = False
+        self.output_attentions = False
+        self.output_hidden_states = False
+        self.use_return_dict = True
+        self.dtype = getattr(torch, kwargs.get('dtype', 'bfloat16'))
+        self.torch_dtype = self.dtype
 
-        super().__init__(**kwargs)
+        super().__init__()
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict, **kwargs):
+        """
+        Create a VibeVoiceASRConfig instance from a dictionary.
+        """
+        # Extract sub-configs from the main config dict
+        acoustic_tokenizer_config = config_dict.get("acoustic_tokenizer_config", None)
+        semantic_tokenizer_config = config_dict.get("semantic_tokenizer_config", None)
+        decoder_config = config_dict.get("decoder_config", None)
+
+        # Remove sub-configs from the main dict to avoid duplication
+        main_config = {k: v for k, v in config_dict.items() if k not in [
+            "acoustic_tokenizer_config",
+            "semantic_tokenizer_config",
+            "decoder_config",
+        ]}
+
+        main_config.update(kwargs)
+
+        return cls(
+            acoustic_tokenizer_config=acoustic_tokenizer_config,
+            semantic_tokenizer_config=semantic_tokenizer_config,
+            decoder_config=decoder_config,
+            **main_config
+        )
+    
+
 
     def get_text_config(self, decoder: bool = False):
         """Return the text (decoder) config for generation."""
@@ -558,9 +684,163 @@ _default_config_json = """
 }
 """
 
+_default_asr_config_json = """
+{
+  "_attn_implementation_autoset": false,
+  "acoustic_tokenizer_config": {
+    "causal": true,
+    "channels": 1,
+    "conv_bias": true,
+    "conv_norm": "none",
+    "corpus_normalize": 0.0,
+    "decoder_depths": null,
+    "decoder_n_filters": 32,
+    "decoder_ratios": [
+      8,
+      5,
+      5,
+      4,
+      2,
+      2
+    ],
+    "disable_last_norm": true,
+    "dtype": "bfloat16",
+    "encoder_depths": "3-3-3-3-3-3-8",
+    "encoder_n_filters": 32,
+    "encoder_ratios": [
+      8,
+      5,
+      5,
+      4,
+      2,
+      2
+    ],
+    "fix_std": 0.5,
+    "layer_scale_init_value": 1e-06,
+    "layernorm": "RMSNorm",
+    "layernorm_elementwise_affine": true,
+    "layernorm_eps": 1e-05,
+    "mixer_layer": "depthwise_conv",
+    "model_type": "vibevoice_acoustic_tokenizer",
+    "pad_mode": "constant",
+    "std_dist_type": "gaussian",
+    "vae_dim": 64,
+    "weight_init_value": 0.01
+  },
+  "acoustic_vae_dim": 64,
+  "architectures": [
+    "VibeVoiceForASRTraining"
+  ],
+  "decoder_config": {
+    "attention_dropout": 0.0,
+    "dtype": "bfloat16",
+    "hidden_act": "silu",
+    "hidden_size": 3584,
+    "initializer_range": 0.02,
+    "intermediate_size": 18944,
+    "layer_types": [
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention",
+      "full_attention"
+    ],
+    "max_position_embeddings": 131072,
+    "max_window_layers": 28,
+    "model_type": "qwen2",
+    "num_attention_heads": 28,
+    "num_hidden_layers": 28,
+    "num_key_value_heads": 4,
+    "rms_norm_eps": 1e-06,
+    "rope_scaling": null,
+    "rope_theta": 1000000.0,
+    "sliding_window": null,
+    "use_cache": true,
+    "use_mrope": false,
+    "use_sliding_window": false,
+    "vocab_size": 152064
+  },
+  "diffusion_head_config": {
+    "ddpm_batch_mul": 4,
+    "ddpm_beta_schedule": "cosine",
+    "ddpm_num_inference_steps": 20,
+    "ddpm_num_steps": 1000,
+    "diffusion_type": "ddpm",
+    "head_ffn_ratio": 3.0,
+    "head_layers": 4,
+    "hidden_size": 3584,
+    "latent_size": 64,
+    "model_type": "vibepod_diffusion_head",
+    "prediction_type": "v_prediction",
+    "rms_norm_eps": 1e-05,
+    "speech_vae_dim": 64
+  },
+  "dtype": "bfloat16",
+  "torch_dtype": "bfloat16",
+  "model_type": "vibevoice",
+  "semantic_tokenizer_config": {
+    "causal": true,
+    "channels": 1,
+    "conv_bias": true,
+    "conv_norm": "none",
+    "corpus_normalize": 0.0,
+    "disable_last_norm": true,
+    "dtype": "bfloat16",
+    "encoder_depths": "3-3-3-3-3-3-8",
+    "encoder_n_filters": 32,
+    "encoder_ratios": [
+      8,
+      5,
+      5,
+      4,
+      2,
+      2
+    ],
+    "fix_std": 0,
+    "layer_scale_init_value": 1e-06,
+    "layernorm": "RMSNorm",
+    "layernorm_elementwise_affine": true,
+    "layernorm_eps": 1e-05,
+    "mixer_layer": "depthwise_conv",
+    "model_type": "vibevoice_semantic_tokenizer",
+    "pad_mode": "constant",
+    "std_dist_type": "none",
+    "vae_dim": 128,
+    "weight_init_value": 0.01
+  },
+  "semantic_vae_dim": 128,
+  "transformers_version": "4.57.6"
+}
+"""
+
+
 import json # noqa F401
 
 DEFAULT_CONFIG = json.loads(_default_config_json)
+DEFAULT_ASR_CONFIG = json.loads(_default_asr_config_json)
 
 
 __all__ = [
