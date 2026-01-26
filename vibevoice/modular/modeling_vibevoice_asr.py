@@ -181,6 +181,9 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel, Generati
         # Initialize weights and apply final processing
         #self.post_init()
     
+    def can_generate(self) -> bool:
+        # For transformers framework version 4.51.3 , it removed after v4.57.1
+        return True
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()
