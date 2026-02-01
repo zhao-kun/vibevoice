@@ -161,7 +161,7 @@ class VibeVoiceASRBatchInference:
         start_time = time.time()
 
         with torch.no_grad():
-            output_ids = self.model.generate(
+            output_ids = self.model.generate_text(
                 **inputs,
                 **generation_config
             )
