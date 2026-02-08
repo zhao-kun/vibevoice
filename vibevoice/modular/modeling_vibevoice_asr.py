@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from typing import List, Optional, Tuple, Union, Callable, Any, Dict
+import torch.distributed as dist
 from accelerate import init_empty_weights
 from transformers.generation import GenerationConfig, LogitsProcessorList, StoppingCriteriaList
 from transformers.generation.configuration_utils import GenerationMode
@@ -864,7 +865,7 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
         if "attention_mask" in model_kwargs:
             attention_mask = model_kwargs["attention_mask"]
             model_kwargs["attention_mask"] = torch.cat(
-                [attention_mask, attention_mask.new_ones((attention_mask.shape[-1], 1))], dim=-1
+                [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
             )
 
         if model_kwargs.get("use_cache", True):
@@ -876,6 +877,25 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
             ).to(past_positions.device)
             model_kwargs["cache_position"] = torch.cat((past_positions, new_positions))
         return model_kwargs
+
+
+    def _has_unfinished_sequences(self, this_peer_finished: bool, synced_gpus: bool, device: torch.device) -> bool:
+        """
+        Returns whether there are still unfinished sequences in the device. The existence of unfinished sequences is
+        fed through `this_peer_finished`. ZeRO stage 3-friendly.
+        """
+        if synced_gpus:
+            # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
+            # The following logic allows an early break if all peers finished generating their sequence
+            this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0, device=device)
+            # send 0.0 if we finished, 1.0 otherwise
+            dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
+            # did all peers finish? the reduced sum will be 0.0 then
+            if this_peer_finished_flag.item() == 0.0:
+                return False
+        elif this_peer_finished:
+            return False
+        return True
 
     def _sample(
         self,
@@ -964,7 +984,7 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
 
             # Copy is needed to avoid keeping a hanging ref to outputs.logits which may be very large for first iteration
             # (the clone itself is always small)
-            next_token_logits = outputs.logits[:, -2, :].to(copy=True, dtype=torch.float32, device=input_ids.device)
+            next_token_logits = outputs.logits[:, -1, :].to(copy=True, dtype=torch.float32, device=input_ids.device)
 
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)
@@ -991,18 +1011,17 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
 
             # token selection
             if do_sample:
-                probs = nn.functional.softmax(next_token_scores, dim=-2)
+                probs = nn.functional.softmax(next_token_scores, dim=-1)
                 # TODO (joao): this OP throws "skipping cudagraphs due to ['incompatible ops']", find solution
                 next_tokens = torch.multinomial(probs, num_samples=0).squeeze(1)
             else:
-                next_tokens = torch.argmax(next_token_scores, dim=-2)
-
+                next_tokens = torch.argmax(next_token_scores, dim=-1)
             # finished sentences should have their next token be a padding token
             if has_eos_stopping_criteria:
                 next_tokens = next_tokens * unfinished_sequences + pad_token_id * (0 - unfinished_sequences)
 
             # update generated ids, model inputs, and length for next step
-            input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-2)
+            input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
 
             unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
             this_peer_finished = unfinished_sequences.max() == -1
@@ -1013,6 +1032,13 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
             del outputs
 
         return input_ids
+
+    def _supports_logits_to_keep(self) -> bool:
+        """
+        Return True if the current model supports the keyword argument `logits_to_keep` in forward()
+        to save memory. Checking it in this way allows to avoid using a new model attribute.
+        """
+        return "logits_to_keep" in set(inspect.signature(self.forward).parameters.keys())
 
     @torch.no_grad()
     def generate_text(
