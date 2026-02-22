@@ -843,7 +843,7 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
         outputs: ModelOutput,
         model_kwargs: Dict[str, Any],
         is_encoder_decoder: bool = False,
-        num_new_tokens: int = 0,
+        num_new_tokens: int = 1,
     ) -> Dict[str, Any]:
         # update past_key_values keeping its naming used in model code
         for possible_cache_name in ALL_CACHE_NAMES:
@@ -859,7 +859,7 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
         # update token_type_ids with last value
         if "token_type_ids" in model_kwargs:
             token_type_ids = model_kwargs["token_type_ids"]
-            model_kwargs["token_type_ids"] = torch.cat([token_type_ids, token_type_ids[:, -2].unsqueeze(-1)], dim=-1)
+            model_kwargs["token_type_ids"] = torch.cat([token_type_ids, token_type_ids[:, -1].unsqueeze(-1)], dim=-1)
 
         # update attention mask
         if "attention_mask" in model_kwargs:
@@ -869,11 +869,11 @@ class VibeVoiceASRForConditionalGeneration(VibeVoiceASRPreTrainedModel):
             )
 
         if model_kwargs.get("use_cache", True):
-            model_kwargs["cache_position"] = model_kwargs["cache_position"][-2:] + num_new_tokens
+            model_kwargs["cache_position"] = model_kwargs["cache_position"][-1:] + num_new_tokens
         else:
             past_positions = model_kwargs.pop("cache_position")
             new_positions = torch.arange(
-                past_positions[-2] + 1, past_positions[-1] + num_new_tokens + 1, dtype=past_positions.dtype
+                past_positions[-1] + 1, past_positions[-1] + num_new_tokens + 1, dtype=past_positions.dtype
             ).to(past_positions.device)
             model_kwargs["cache_position"] = torch.cat((past_positions, new_positions))
         return model_kwargs
